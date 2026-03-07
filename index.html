@@ -468,7 +468,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="modal">
     <div class="modal-handle"></div>
     <button class="modal-close" onclick="closeModal('dialPadModal')">✕</button>
-    <div class="modal-title">📞 Manual Dial Pad</div>
+    <div class="modal-title">📞 Manual Dial</div>
     <div class="dialpad-display" id="dialDisplay">Enter Number</div>
     <div class="dialpad-grid">
       <button class="dialpad-btn" onclick="dialPadInput('1')">1</button>
@@ -486,6 +486,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
       <button class="dialpad-btn delete" onclick="dialPadDelete()">⌫</button>
       <button class="dialpad-btn action" onclick="dialPadCall()" style="grid-column:span 2">📞 Call</button>
     </div>
+  </div>
+</div>
+
+<!-- Post-call log modal (shown after manual dial) -->
+<div class="modal-overlay" id="manualCallLogModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('manualCallLogModal')">✕</button>
+    <div class="modal-title">📋 Log This Call</div>
+    <div id="manualCallLogContent"></div>
   </div>
 </div>
 
@@ -1973,20 +1983,80 @@ function deleteUser(uid, role){
 }
 
 function adminUploadHTML(){
+  const coldData = leads.filter(l=>l.assignedRole==='executive');
+  const managerLeads = leads.filter(l=>l.assignedRole==='manager');
+  const execs = USERS.executive.filter(u=>u.active);
+  const mgrs  = USERS.manager.filter(u=>u.active);
+
+  // Per-executive cold data stats
+  const execStats = execs.map(e=>{
+    const cnt = coldData.filter(l=>l.assigned===e.name).length;
+    const called = coldData.filter(l=>l.assigned===e.name&&l.callCount>0).length;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <div>
+        <div style="font-size:.8rem;font-weight:600">${e.name}</div>
+        <div style="font-size:.65rem;color:var(--muted2)">${cnt} cold records · ${called} called · ${cnt-called} pending</div>
+      </div>
+      <button onclick="deleteByExec('${e.name.replace(/'/g,"\\\'")}')" style="background:none;border:1px solid rgba(240,92,92,.35);border-radius:7px;color:var(--red);cursor:pointer;font-size:.72rem;padding:4px 10px;white-space:nowrap">🗑️ Delete All</button>
+    </div>`;
+  }).join('') || '<div style="font-size:.78rem;color:var(--muted);padding:8px 0">No executives</div>';
+
+  // Per-manager lead stats
+  const mgrStats = mgrs.map(m=>{
+    const cnt = managerLeads.filter(l=>l.assignedManager===m.name||l.transferredTo===m.name).length;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <div>
+        <div style="font-size:.8rem;font-weight:600">${m.name}</div>
+        <div style="font-size:.65rem;color:var(--muted2)">${cnt} leads in pipeline</div>
+      </div>
+      <button onclick="deleteByManager('${m.name.replace(/'/g,"\\\'")}')" style="background:none;border:1px solid rgba(240,92,92,.35);border-radius:7px;color:var(--red);cursor:pointer;font-size:.72rem;padding:4px 10px;white-space:nowrap">🗑️ Delete All</button>
+    </div>`;
+  }).join('') || '<div style="font-size:.78rem;color:var(--muted);padding:8px 0">No managers</div>';
+
   return `
-    <div style="margin-bottom:12px;font-size:.8rem;color:var(--muted2)">Upload a CSV or Excel file with columns: <b>Name, Phone, Source, Interest, Notes</b></div>
+    <div style="margin-bottom:12px;font-size:.8rem;color:var(--muted2)">Upload CSV/Excel with columns: <b>Name, Phone, Source, Interest, Notes</b></div>
     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
       <div class="upload-icon">📂</div>
       <div class="upload-title">Tap to Upload CSV / Excel</div>
-      <div class="upload-sub">Drag & drop or click to browse</div>
+      <div class="upload-sub">Distributed equally to all ${execs.length} executive(s)</div>
     </div>
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(this)">
     <div id="uploadPreview"></div>
-    <button class="btn-secondary" onclick="downloadTemplate()" style="width:100%;margin-bottom:10px">⬇️ Download Sample CSV Template</button>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px">
-      <div style="font-size:.78rem;font-weight:600;margin-bottom:6px">📊 Upload Stats</div>
-      <div style="font-size:.75rem;color:var(--muted2)">Total leads in system: <b style="color:var(--text)">${leads.length}</b></div>
-      <div style="font-size:.75rem;color:var(--muted2);margin-top:4px">Last upload: <b style="color:var(--text)">${localStorage.getItem('ycrm_lastupload')||'Never'}</b></div>
+    <button class="btn-secondary" onclick="downloadTemplate()" style="width:100%;margin-bottom:14px">⬇️ Download CSV Template</button>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:10px">📊 Data Overview</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:800;color:var(--gold)">${leads.length}</div>
+          <div style="font-size:.62rem;color:var(--muted)">Total Records</div>
+        </div>
+        <div style="text-align:center;background:rgba(77,142,240,.06);border:1px solid rgba(77,142,240,.2);border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:800;color:var(--blue)">${coldData.length}</div>
+          <div style="font-size:.62rem;color:var(--muted)">❄️ Cold Data</div>
+        </div>
+        <div style="text-align:center;background:rgba(34,201,138,.06);border:1px solid rgba(34,201,138,.2);border-radius:8px;padding:10px">
+          <div style="font-size:1.2rem;font-weight:800;color:var(--green)">${managerLeads.length}</div>
+          <div style="font-size:.62rem;color:var(--muted)">🔥 Leads</div>
+        </div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted2)">Last upload: <b style="color:var(--text)">${localStorage.getItem('ycrm_lastupload')||'Never'}</b></div>
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif">❄️ Cold Data by Executive</div>
+        <button onclick="deleteAllColdData()" style="background:none;border:1px solid rgba(240,92,92,.35);border-radius:7px;color:var(--red);cursor:pointer;font-size:.7rem;padding:4px 10px">🗑️ Delete All Cold</button>
+      </div>
+      ${execStats}
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif">🔥 Leads by Manager</div>
+        <button onclick="deleteAllLeads()" style="background:none;border:1px solid rgba(240,92,92,.35);border-radius:7px;color:var(--red);cursor:pointer;font-size:.7rem;padding:4px 10px">🗑️ Delete All Leads</button>
+      </div>
+      ${mgrStats}
     </div>
   `;
 }
@@ -2828,75 +2898,166 @@ function processFile(file){
     if(lines.length<2){showToast('File is empty or invalid','error');return;}
     const rows=lines.slice(1).map(line=>{
       const cols=line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
-      return {name:cols[0]||'',phone:cols[1]||'',source:cols[2]||'Purchased Data',interest:cols[3]||'Not decided',notes:cols[4]||''};
+      return {name:cols[0]||'',phone:cols[1]||'',source:cols[2]||'',interest:cols[3]||'',notes:cols[4]||''};
     }).filter(r=>r.name&&r.phone);
 
     const preview=document.getElementById('uploadPreview');
     if(rows.length===0){showToast('No valid rows found','error');return;}
+
+    // Store in global to avoid JSON encoding bugs (apostrophes in names break onclick JSON)
+    window._importRows = rows;
+    const activeExecs = USERS.executive.filter(u=>u.active);
+
     preview.innerHTML=`
-      <div style="font-size:.78rem;font-weight:600;margin-bottom:8px;color:var(--green)">✅ ${rows.length} leads ready to import</div>
+      <div style="font-size:.78rem;font-weight:600;margin-bottom:6px;color:var(--green)">✅ ${rows.length} rows ready to import</div>
+      <div style="font-size:.72rem;color:var(--muted2);margin-bottom:10px">Will be distributed equally across <b>${activeExecs.length}</b> executive(s): ${activeExecs.map(e=>e.name.split(' ')[0]).join(', ')}</div>
       ${rows.slice(0,5).map(r=>`
         <div class="preview-row">
           <div class="preview-name">${r.name}</div>
           <div class="preview-phone">${r.phone}</div>
         </div>`).join('')}
       ${rows.length>5?`<div style="font-size:.7rem;color:var(--muted);padding:6px 0">...and ${rows.length-5} more</div>`:''}
-      <button class="btn-primary" style="margin-top:10px" onclick="importLeads(${JSON.stringify(rows).split('"').join("'")})">⬆️ Import All ${rows.length} Leads</button>
+      <button class="btn-primary" style="margin-top:10px" onclick="importLeads()">⬆️ Import All ${rows.length} Leads</button>
     `;
   };
   reader.readAsText(file);
 }
 
-function importLeads(rows){
-  // Bulk upload → ALWAYS assigned to executives (they work raw data)
-  // Distributed round-robin across all active executives
-  const src=typeof rows==='string'?JSON.parse(rows.replace(/'/g,'"')):rows;
+function importLeads(){
+  const src = window._importRows;
+  if(!src || !src.length){ showToast('No data to import','error'); return; }
+
   const execs = USERS.executive.filter(u=>u.active);
   if(!execs.length){ showToast('No active executives to assign to!','error'); return; }
-  let execIdx = 0;
-  // Get current counts to continue round-robin from where it left off
-  const execCounts = {};
-  execs.forEach(e=>{ execCounts[e.name] = leads.filter(l=>l.assigned===e.name&&l.assignedRole==='executive').length; });
-  // Start with executive who has fewest leads
-  execIdx = execs.reduce((minI,e,i)=> execCounts[e.name] < execCounts[execs[minI].name] ? i : minI, 0);
 
-  src.forEach(r=>{
-    if(findDuplicate(r.phone)) return; // skip duplicates silently
-    const exec = execs[execIdx % execs.length];
-    execIdx++;
+  // True round-robin: spread evenly across ALL executives
+  // Each exec gets Math.floor(total/execs) leads, remainder distributed one by one
+  let imported = 0;
+  let skipped = 0;
+  const now = Date.now();
+
+  src.forEach((r, i) => {
+    if(findDuplicate(r.phone)){ skipped++; return; }
+    // Round-robin index — purely position-based, guaranteed even distribution
+    const exec = execs[imported % execs.length];
     leads.push({
-      id:'L'+(Date.now()+execIdx)+Math.random().toString(36).slice(2,8),
-      name:r.name, phone:r.phone, phone2:'',
-      source:r.source||CRM_CONFIG.leadSources[0]||'Purchased Data',
-      interest:r.interest||CRM_CONFIG.plotSizes[0]||'Not decided',
-      status:'Cold',  // bulk upload always starts as Cold data
+      id: 'L' + (now + i) + Math.random().toString(36).slice(2,7),
+      name: r.name.trim(),
+      phone: r.phone.trim(),
+      phone2: '',
+      source: r.source || CRM_CONFIG.leadSources[0] || 'Purchased Data',
+      interest: r.interest || CRM_CONFIG.plotSizes[0] || 'Not decided',
+      status: 'Cold',
       assigned: exec.name,
-      assignedRole:'executive',
+      assignedRole: 'executive',
       assignedManager: null,
       transferredTo: '',
-      generatedBy:'Bulk Upload',
-      generatedByRole:'admin',
+      generatedBy: 'Bulk Upload',
+      generatedByRole: 'admin',
       pendingAssign: false,
-      followup:'', notes:r.notes||'',
-      createdAt:new Date().toISOString(), callCount:0
+      followup: '', notes: r.notes || '',
+      createdAt: new Date(now + i).toISOString(),
+      updatedAt: new Date(now + i).toISOString(),
+      callCount: 0
     });
+    imported++;
   });
-  localStorage.setItem('ycrm_lastupload',new Date().toLocaleDateString('en-IN'));
+
+  if(!imported){ showToast('All rows were duplicates — nothing imported','error'); return; }
+
   localStorage.setItem('ycrm_leads', JSON.stringify(leads));
-  // Push each lead individually to avoid ID collision in batch upsert
+  localStorage.setItem('ycrm_lastupload', new Date().toLocaleDateString('en-IN'));
+
+  // Push each lead to Supabase with stagger to avoid write collision
   if(supabaseReady){
-    const newLeads = leads.slice(-src.length);
-    newLeads.forEach((l,i) => {
-      setTimeout(()=> pushLead(l).catch(()=>{}), i * 30); // stagger 30ms apart
+    const newLeads = leads.slice(-imported);
+    newLeads.forEach((l, i) => {
+      setTimeout(() => pushLead(l).catch(()=>{}), i * 25);
     });
   }
-  const dist = execs.map(e=>({
-    name: e.name,
-    count: leads.filter(l=>l.assigned===e.name&&l.assignedRole==='executive').length
-  }));
-  const distText = dist.map(d=>d.name.split(' ')[0]+': '+d.count).join(' · ');
-  showToast(`✅ ${src.length} leads → ${distText}`);
-  renderAdminPanel(); renderDashboard();
+
+  // Show distribution breakdown
+  const dist = execs.map(e => {
+    const cnt = leads.filter(l => l.assigned===e.name && l.assignedRole==='executive').length;
+    return e.name.split(' ')[0] + ': ' + cnt;
+  }).join(' · ');
+  showToast(`✅ ${imported} imported${skipped?' ('+skipped+' duplicates skipped)':''} → ${dist}`);
+
+  window._importRows = null; // clear global
+
+  // ── Refresh admin's own device immediately ──
+  // 1. Switch to Team tab so admin sees the distributed records right away
+  adminTab = 'team';
+  renderAdminPanel();
+
+  // 2. If the Leads page is currently open, refresh it too
+  renderDashboard();
+  if(document.getElementById('leads-list')) renderLeadsList();
+
+  // 3. Show distribution toast
+  showToast(`✅ ${imported} imported${skipped?' ('+skipped+' skipped)':''} → ${dist}`);
+}
+
+
+// ══════════════════════════════════════════
+//  BULK DELETE FUNCTIONS
+// ══════════════════════════════════════════
+function deleteByExec(execName){
+  const cnt = leads.filter(l=>l.assigned===execName&&l.assignedRole==='executive').length;
+  if(!cnt){ showToast('No cold data for '+execName,'error'); return; }
+  if(!confirm('Delete all '+cnt+' cold data records assigned to '+execName+'?')) return;
+  const toDelete = leads.filter(l=>l.assigned===execName&&l.assignedRole==='executive').map(l=>l.id);
+  leads = leads.filter(l=>!(l.assigned===execName&&l.assignedRole==='executive'));
+  save();
+  if(supabaseReady){
+    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+  }
+  showToast('🗑️ Deleted '+cnt+' records from '+execName.split(' ')[0]);
+  switchAdminTab('upload');
+}
+
+function deleteByManager(mgrName){
+  const cnt = leads.filter(l=>(l.assignedManager===mgrName||l.transferredTo===mgrName)&&l.assignedRole==='manager').length;
+  if(!cnt){ showToast('No leads for '+mgrName,'error'); return; }
+  if(!confirm('Delete all '+cnt+' leads assigned to '+mgrName+'?')) return;
+  const toDelete = leads.filter(l=>(l.assignedManager===mgrName||l.transferredTo===mgrName)&&l.assignedRole==='manager').map(l=>l.id);
+  leads = leads.filter(l=>!((l.assignedManager===mgrName||l.transferredTo===mgrName)&&l.assignedRole==='manager'));
+  save();
+  if(supabaseReady){
+    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+  }
+  showToast('🗑️ Deleted '+cnt+' leads from '+mgrName.split(' ')[0]);
+  switchAdminTab('upload');
+}
+
+function deleteAllColdData(){
+  const cnt = leads.filter(l=>l.assignedRole==='executive').length;
+  if(!cnt){ showToast('No cold data to delete','error'); return; }
+  if(!confirm('Delete ALL '+cnt+' cold data records? This cannot be undone.')) return;
+  if(!confirm('FINAL WARNING: This removes all cold data from cloud too. Confirm?')) return;
+  const toDelete = leads.filter(l=>l.assignedRole==='executive').map(l=>l.id);
+  leads = leads.filter(l=>l.assignedRole!=='executive');
+  save();
+  if(supabaseReady){
+    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+  }
+  showToast('🗑️ All cold data deleted ('+cnt+' records)');
+  switchAdminTab('upload');
+}
+
+function deleteAllLeads(){
+  const cnt = leads.filter(l=>l.assignedRole==='manager').length;
+  if(!cnt){ showToast('No leads to delete','error'); return; }
+  if(!confirm('Delete ALL '+cnt+' manager leads? This cannot be undone.')) return;
+  if(!confirm('FINAL WARNING: This removes all leads from cloud too. Confirm?')) return;
+  const toDelete = leads.filter(l=>l.assignedRole==='manager').map(l=>l.id);
+  leads = leads.filter(l=>l.assignedRole!=='manager');
+  save();
+  if(supabaseReady){
+    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+  }
+  showToast('🗑️ All leads deleted ('+cnt+' records)');
+  switchAdminTab('upload');
 }
 
 function downloadTemplate(){
@@ -3152,38 +3313,186 @@ function callToRow(c){
 }
 
 function dialPadCall(){
-  if(dialNumber.length === 0){
-    showToast('Please enter a number', 'error');
-    return;
+  if(dialNumber.length < 5){ showToast('Enter a valid number','error'); return; }
+  const num = dialNumber;
+
+  // Check if number exists in leads
+  const existingLead = leads.find(l =>
+    l.phone.replace(/\D/g,'') === num.replace(/\D/g,'') ||
+    (l.phone2 && l.phone2.replace(/\D/g,'') === num.replace(/\D/g,''))
+  );
+
+  // Initiate the call
+  window.location.href = 'tel:' + num;
+  closeModal('dialPadModal');
+  dialNumber = '';
+  updateDialDisplay();
+
+  // Show post-call log sheet after 2 seconds (give time for call to connect)
+  setTimeout(() => { openManualCallLog(num, existingLead); }, 2000);
+}
+
+function openManualCallLog(phone, existingLead){
+  const sourceOpts  = CRM_CONFIG.leadSources.map(s=>`<option>${s}</option>`).join('');
+  const interestOpts= CRM_CONFIG.plotSizes.map(s=>`<option>${s}</option>`).join('');
+  const statusOpts  = CRM_CONFIG.leadStatuses.map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
+
+  const existingSection = existingLead ? `
+    <div style="background:rgba(34,201,138,.07);border:1px solid rgba(34,201,138,.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:.8rem">
+      <div style="font-weight:700;color:var(--green);margin-bottom:2px">✅ Found in CRM: ${existingLead.name}</div>
+      <div style="color:var(--muted2)">${existingLead.phone} · ${existingLead.status} · Assigned: ${existingLead.assigned}</div>
+    </div>` : `
+    <div style="background:rgba(232,160,32,.07);border:1px solid rgba(232,160,32,.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:.8rem">
+      <div style="font-weight:700;color:var(--gold);margin-bottom:2px">⚠️ Number not in CRM</div>
+      <div style="color:var(--muted2)">Fill details below to add as a new lead</div>
+    </div>`;
+
+  const nameField = existingLead ? '' : `
+    <div class="form-group"><label class="form-label">Customer Name</label>
+      <input class="form-input" id="mcl-name" placeholder="Full name" style="margin-bottom:0">
+    </div>`;
+
+  document.getElementById('manualCallLogContent').innerHTML = `
+    <div style="font-size:.82rem;color:var(--muted2);margin-bottom:10px">📞 Called: <b style="color:var(--text);font-family:'DM Mono',monospace">${phone}</b></div>
+    ${existingSection}
+    ${nameField}
+    <div class="form-group" style="margin-bottom:10px"><label class="form-label">Call Outcome *</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div class="outcome-chip" data-val="not_picked"    onclick="selectOutcome(this)">📵 Not Picked</div>
+        <div class="outcome-chip" data-val="switched_off"  onclick="selectOutcome(this)">🔇 Switched Off</div>
+        <div class="outcome-chip" data-val="no_network"    onclick="selectOutcome(this)">📶 No Network</div>
+        <div class="outcome-chip" data-val="callback"      onclick="selectOutcome(this)">🔄 Call Back</div>
+        <div class="outcome-chip" data-val="not_interested" onclick="selectOutcome(this)">❌ Not Interested</div>
+        <div class="outcome-chip" data-val="interested"    onclick="selectOutcome(this)">🔥 Interested</div>
+      </div>
+      <input type="hidden" id="mcl-outcome">
+    </div>
+    ${!existingLead ? `
+    <div id="mcl-new-lead-fields" style="display:none">
+      <div class="form-group"><label class="form-label">Lead Source</label>
+        <select class="form-select" id="mcl-source">${sourceOpts}</select>
+      </div>
+      <div class="form-group"><label class="form-label">${CRM_CONFIG.businessType||'Interest'}</label>
+        <select class="form-select" id="mcl-interest">${interestOpts}</select>
+      </div>
+    </div>` : ''}
+    <div class="form-group"><label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="mcl-notes" placeholder="What did they say?" style="height:70px"></textarea>
+    </div>
+    <div class="form-group"><label class="form-label">Follow-up Date</label>
+      <input class="form-input" id="mcl-followup" type="date" value="${new Date().toISOString().slice(0,10)}" style="margin-bottom:0">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn-primary" style="flex:1" onclick="saveManualCallLog('${phone}','${existingLead?existingLead.id:''}')">💾 Save Record</button>
+      <button class="btn-secondary" onclick="closeModal('manualCallLogModal')">Skip</button>
+    </div>
+  `;
+
+  // Wire outcome chips to hidden input
+  document.querySelectorAll('#manualCallLogContent .outcome-chip').forEach(chip => {
+    chip.onclick = function(){
+      document.querySelectorAll('#manualCallLogContent .outcome-chip').forEach(c=>c.className='outcome-chip');
+      this.className='outcome-chip sel-'+this.dataset.val;
+      document.getElementById('mcl-outcome').value = this.dataset.val;
+      // Show new lead fields if interested and no existing lead
+      if(!existingLead){
+        const nf = document.getElementById('mcl-new-lead-fields');
+        if(nf) nf.style.display = (this.dataset.val==='interested') ? 'block' : 'none';
+      }
+    };
+  });
+
+  document.getElementById('manualCallLogModal').classList.add('show');
+}
+
+function saveManualCallLog(phone, existingLeadId){
+  const outcome  = document.getElementById('mcl-outcome').value;
+  const notes    = (document.getElementById('mcl-notes')||{}).value?.trim()||'';
+  const followup = (document.getElementById('mcl-followup')||{}).value||'';
+  if(!outcome){ showToast('Select a call outcome','error'); return; }
+
+  const now = new Date();
+  let targetLead = existingLeadId ? leads.find(l=>l.id===existingLeadId) : null;
+
+  // If no existing lead — create one
+  if(!targetLead){
+    const name = (document.getElementById('mcl-name')||{}).value?.trim() || 'Unknown ('+phone+')';
+    const source   = (document.getElementById('mcl-source')||{}).value   || CRM_CONFIG.leadSources[0]||'Manual Call';
+    const interest = (document.getElementById('mcl-interest')||{}).value || CRM_CONFIG.plotSizes[0]||'Not decided';
+
+    // Determine initial status from outcome
+    let status = 'Cold';
+    if(outcome==='interested')   status = 'Hot';
+    else if(outcome==='callback') status = 'Warm';
+
+    // Auto-assign: if interested → manager; otherwise → self (executive) or pending (admin)
+    let assigned = currentUser, assignedRole = 'executive', assignedManager = null, transferredTo = '';
+    if(outcome==='interested' && currentRole==='executive'){
+      const mgrs = USERS.manager.filter(u=>u.active);
+      if(mgrs.length){
+        const pick = mgrs[0];
+        assignedRole    = 'manager';
+        assignedManager = pick.name;
+        transferredTo   = pick.name;
+        assigned        = pick.name;
+        status          = 'transferred';
+      }
+    } else if(currentRole==='admin'){
+      assignedRole = 'manager';
+      const mgrs = USERS.manager.filter(u=>u.active);
+      if(mgrs.length){ assignedManager = mgrs[0].name; assigned = mgrs[0].name; transferredTo = mgrs[0].name; }
+    }
+
+    targetLead = {
+      id: 'L'+Date.now()+Math.random().toString(36).slice(2,6),
+      name, phone, phone2:'', source, interest, status,
+      assigned, assignedRole, assignedManager, transferredTo,
+      generatedBy: currentUser, generatedByRole: currentRole,
+      convertedFromColdData: false,
+      pendingAssign: false,
+      followup, notes,
+      createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      callCount: 1,
+      manualCallEntry: true
+    };
+    leads.unshift(targetLead);
+  } else {
+    // Update existing lead
+    targetLead.callCount = (targetLead.callCount||0) + 1;
+    if(followup) targetLead.followup = followup;
+    if(notes) targetLead.notes = (targetLead.notes ? targetLead.notes+'\n' : '') + '['+now.toLocaleDateString('en-IN')+': '+notes+']';
+    if(outcome==='interested')    targetLead.status = 'Hot';
+    else if(outcome==='callback') targetLead.status = 'Warm';
+    else if(outcome==='not_interested') targetLead.status = 'Cold';
+    // Auto-transfer if exec marks existing lead as interested
+    if(outcome==='interested' && targetLead.assignedRole==='executive' && currentRole==='executive'){
+      const mgrs = USERS.manager.filter(u=>u.active);
+      if(mgrs.length){
+        const pick = mgrs[0];
+        targetLead.assignedRole    = 'manager';
+        targetLead.assignedManager = pick.name;
+        targetLead.transferredTo   = pick.name;
+        targetLead.status          = 'transferred';
+        targetLead.convertedFromColdData = true;
+      }
+    }
   }
-  
-  // Initiate call using tel: protocol
-  window.location.href = 'tel:' + dialNumber;
-  
-  // Log the call
-  showToast('Calling ' + dialNumber + '...');
-  
-  // Optional: Save to call history
-  const callLog = {
-    id: 'C' + Date.now(),
-    phone: dialNumber,
-    type: 'manual',
-    timestamp: new Date().toISOString(),
-    user: currentUser,
-    role: currentRole
+
+  // Save call log
+  const log = {
+    id: 'C'+Date.now(), leadId: targetLead.id, agent: currentUser,
+    outcome, statusChanged: null, followup, notes,
+    date: now.toISOString().slice(0,10),
+    time: now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+    manualDial: true
   };
-  
-  // You can save this to localStorage if needed
-  let manualCalls = JSON.parse(localStorage.getItem('ycrm_manual_calls')||'[]');
-  manualCalls.unshift(callLog);
-  if(manualCalls.length > 50) manualCalls = manualCalls.slice(0, 50);
-  localStorage.setItem('ycrm_manual_calls', JSON.stringify(manualCalls));
-  
-  // Close modal after a short delay
-  setTimeout(() => {
-    closeModal('dialPadModal');
-    dialNumber = '';
-  }, 500);
+  callLogs.push(log);
+  save(targetLead.id);
+  saveCallToCloud(log);
+  closeModal('manualCallLogModal');
+  showToast('✅ Call recorded' + (targetLead.manualCallEntry ? ' · New lead created' : '') + '!');
+  renderDashboard();
+  if(document.getElementById('leads-list')) renderLeadsList();
 }
 
 function dialPadDelete(){
