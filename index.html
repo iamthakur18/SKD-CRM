@@ -1,0 +1,2861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SKD CRM</title>
+
+<!-- PWA Meta Tags -->
+<meta name="application-name" content="SKD CRM">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SKD CRM">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f7f4ef">
+<meta name="description" content="SKD CRM — Sales & Customer Development Management">
+
+<link rel="manifest" href="/manifest.json">
+
+<!-- App Icons — inline, no external files needed -->
+<link rel="apple-touch-icon" href="/icon-512.png">
+<link rel="icon" type="image/png" href="/icon-512.png">
+
+<!-- Splash screens for iOS -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+<!-- Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>:root {
+  --bg: #f7f4ef;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card2: #fdf9f4;
+  --border: #e8e0d4;
+  --border2: #d9cfc0;
+  --gold: #b5780a;
+  --gold2: #d4930f;
+  --goldbg: #fef3de;
+  --green: #1a9e6e;
+  --blue: #2f6fbd;
+  --red: #d94040;
+  --purple: #7c52c8;
+  --text: #2a1f0e;
+  --text2: #3d2e18;
+  --muted: #9e8e78;
+  --muted2: #7a6a58;
+  --shadow-sm: 0 1px 4px rgba(90,60,10,.07);
+  --shadow-md: 0 4px 20px rgba(90,60,10,.10);
+  --shadow-lg: 0 8px 32px rgba(90,60,10,.13);
+  --hot: #d94040;
+  --warm: #b5780a;
+  --cold: #2f6fbd;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ── LOGIN ── */
+#loginScreen{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;
+  background:linear-gradient(160deg,#fffaf3 0%,#f5ede0 50%,#ede3d4 100%);
+}
+.login-sub{font-size:0.8rem;color:var(--muted2);margin-bottom:28px;text-align:center;line-height:1.6}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:28px 24px;width:100%;max-width:380px;box-shadow:var(--shadow-lg)}
+.login-title{font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:20px;text-align:center;color:var(--text2)}
+.role-selector{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px}
+.role-opt{background:var(--bg);border:2px solid var(--border);border-radius:14px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .2s}
+.role-opt.sel{border-color:var(--gold);background:var(--goldbg)}
+.role-opt .role-icon{font-size:1.4rem;margin-bottom:4px}
+.role-opt .role-name{font-size:0.7rem;font-weight:600;color:var(--muted2)}
+.role-opt.sel .role-name{color:var(--gold)}
+.form-input,.form-select,.form-textarea{
+  width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:12px;
+  padding:11px 14px;font-family:'DM Sans',sans-serif;font-size:0.9rem;color:var(--text);
+  outline:none;transition:border-color .2s,box-shadow .2s;margin-bottom:12px
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(181,120,10,.10)}
+.form-select option{background:#fff}
+.form-textarea{resize:vertical;min-height:72px;margin-bottom:0}
+.form-label{font-size:0.75rem;color:var(--muted2);margin-bottom:5px;display:block;font-weight:600;letter-spacing:.3px}
+.form-group{margin-bottom:14px}
+.btn-primary{
+  width:100%;background:var(--gold);color:#fff;border:none;border-radius:12px;
+  padding:13px;font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:700;
+  cursor:pointer;transition:opacity .2s,box-shadow .2s;letter-spacing:.3px;
+  box-shadow:0 4px 14px rgba(181,120,10,.30)
+}
+.btn-primary:hover{opacity:.92;box-shadow:0 6px 20px rgba(181,120,10,.38)}
+.btn-secondary{
+  background:var(--bg);border:1.5px solid var(--border);border-radius:10px;
+  padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:0.82rem;
+  color:var(--text2);cursor:pointer;transition:all .2s;font-weight:500
+}
+.btn-secondary:hover{border-color:var(--gold);color:var(--gold)}
+.hint{font-size:0.7rem;color:var(--muted);margin-top:12px;text-align:center;line-height:1.5}
+
+/* ── APP SHELL ── */
+#appShell{display:none}
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:12px 16px;display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;z-index:100;box-shadow:0 1px 6px rgba(90,60,10,.07)
+}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.role-badge{font-size:0.62rem;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase}
+.role-badge.admin{background:rgba(181,120,10,.12);color:var(--gold);border:1px solid rgba(181,120,10,.25)}
+.role-badge.manager{background:rgba(47,111,189,.10);color:var(--blue);border:1px solid rgba(47,111,189,.22)}
+.role-badge.executive{background:rgba(26,158,110,.10);color:var(--green);border:1px solid rgba(26,158,110,.22)}
+.topbar-user{font-size:0.75rem;color:var(--muted2);text-align:right}
+.topbar-user strong{display:block;color:var(--text);font-size:0.82rem}
+.logout-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:4px}
+
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:100;box-shadow:0 -2px 12px rgba(90,60,10,.07)}
+.nav-btn{flex:1;padding:10px 4px 8px;background:none;border:none;cursor:pointer;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.62rem;display:flex;flex-direction:column;align-items:center;gap:2px;transition:color .2s;font-weight:500}
+.nav-btn.active{color:var(--gold)}
+.nav-icon{font-size:1.25rem}
+
+.page{display:none;padding:16px 14px 90px;animation:fadeIn .2s}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── CARDS ── */
+.section-title{font-family:'Syne',sans-serif;font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin:18px 0 10px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 14px;box-shadow:var(--shadow-sm)}
+.stat-label{font-size:0.68rem;color:var(--muted2);margin-bottom:4px;font-weight:500}
+.stat-value{font-size:1.7rem;font-weight:700;font-family:'Syne',sans-serif}
+.stat-value.gold{color:var(--gold)}
+.stat-value.green{color:var(--green)}
+.stat-value.blue{color:var(--blue)}
+.stat-value.red{color:var(--red)}
+.stat-sub{font-size:0.62rem;color:var(--muted);margin-top:2px}
+
+.lead-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s;box-shadow:var(--shadow-sm)}
+.lead-card:hover{border-color:var(--gold);box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.lead-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.lead-name{font-size:0.95rem;font-weight:600;font-family:'Syne',sans-serif;color:var(--text)}
+.lead-phone{font-size:0.75rem;color:var(--muted2);font-family:'DM Mono',monospace;margin-top:2px}
+.lead-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.lead-tag{font-size:0.62rem;background:rgba(47,111,189,.06);color:var(--blue);border:1px solid rgba(47,111,189,.15);border-radius:6px;padding:2px 7px}
+.action-row{display:flex;gap:7px;margin-top:10px}
+.action-btn{flex:1;padding:8px 4px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:0.72rem;cursor:pointer;font-weight:600;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:4px}
+.action-btn.primary{background:var(--gold);color:#fff;border-color:var(--gold)}
+.action-btn.green{background:var(--green);color:#fff;border-color:var(--green)}
+.action-btn:hover{opacity:.82}
+
+.badge{font-size:0.6rem;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.badge.hot{background:rgba(217,64,64,.10);color:var(--hot);border:1px solid rgba(217,64,64,.22)}
+.badge.warm{background:rgba(181,120,10,.10);color:var(--warm);border:1px solid rgba(181,120,10,.22)}
+.badge.cold{background:rgba(47,111,189,.10);color:var(--cold);border:1px solid rgba(47,111,189,.22)}
+.badge.closed{background:rgba(26,158,110,.10);color:var(--green);border:1px solid rgba(26,158,110,.22)}
+.badge.transferred{background:rgba(124,82,200,.08);color:var(--purple);border:1px solid rgba(124,82,200,.18)}
+
+.search-bar{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:0.88rem;color:var(--text);width:100%;margin-bottom:12px;outline:none;box-shadow:var(--shadow-sm)}
+.search-bar:focus{border-color:var(--gold)}
+.search-bar::placeholder{color:var(--muted)}
+.filter-row{display:flex;gap:7px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px}
+.filter-chip{background:var(--surface);border:1.5px solid var(--border);border-radius:20px;padding:5px 14px;font-size:0.72rem;white-space:nowrap;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--muted2);transition:all .2s;font-weight:500}
+.filter-chip.active{background:var(--gold);color:#fff;border-color:var(--gold);font-weight:700}
+
+/* ── PLOT CARDS ── */
+.plots-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plot-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)}
+.plot-id{font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted);margin-bottom:5px}
+.plot-size{font-size:1rem;font-weight:700;font-family:'Syne',sans-serif;margin-bottom:3px}
+.plot-sector{font-size:0.72rem;color:var(--muted2);margin-bottom:7px}
+.plot-price{font-size:0.82rem;font-weight:700;color:var(--gold)}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px}
+.status-dot.available{background:var(--green)}
+.status-dot.booked{background:var(--red)}
+.status-dot.hold{background:var(--warm)}
+
+/* ── TEAM ── */
+.team-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+.team-top{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.team-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;font-family:'Syne',sans-serif;flex-shrink:0}
+.team-name{font-size:0.92rem;font-weight:700;font-family:'Syne',sans-serif}
+.team-role{font-size:0.68rem;color:var(--muted2);margin-top:2px}
+.team-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.team-stat{text-align:center}
+.team-stat-val{font-size:1rem;font-weight:700;font-family:'Syne',sans-serif}
+.team-stat-label{font-size:0.6rem;color:var(--muted);margin-top:1px}
+.progress-bar{width:100%;height:4px;background:var(--border);border-radius:2px;margin-top:10px}
+.progress-fill{height:100%;border-radius:2px}
+
+/* ── MODAL ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(42,31,14,.55);z-index:200;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border-radius:24px 24px 0 0;width:100%;max-height:88vh;overflow-y:auto;padding:20px 16px 40px;box-shadow:0 -8px 40px rgba(90,60,10,.15)}
+.modal-handle{width:38px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px}
+.modal-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--text)}
+.modal-close{float:right;background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;margin-top:-3px}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:9px 20px;border-radius:20px;font-size:0.82rem;font-weight:700;z-index:300;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 16px rgba(26,158,110,.30)}
+.toast.show{opacity:1}
+.toast.error{background:var(--red);box-shadow:0 4px 16px rgba(217,64,64,.30)}
+
+/* ── BULK UPLOAD ── */
+.upload-zone{border:2px dashed var(--border2);border-radius:16px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:14px;background:var(--bg)}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--gold);background:var(--goldbg)}
+.upload-icon{font-size:2.2rem;margin-bottom:8px}
+.upload-title{font-size:0.9rem;font-weight:600;margin-bottom:4px}
+.upload-sub{font-size:0.72rem;color:var(--muted2)}
+#fileInput{display:none}
+.upload-preview{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;max-height:200px;overflow-y:auto}
+.preview-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.78rem}
+.preview-row:last-child{border-bottom:none}
+.preview-name{font-weight:500}
+.preview-phone{font-family:'DM Mono',monospace;color:var(--muted2);font-size:0.72rem}
+
+/* ── INTEGRATION CARDS ── */
+.integration-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-sm)}
+.int-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+.int-info{flex:1}
+.int-name{font-size:0.9rem;font-weight:600;font-family:'Syne',sans-serif;margin-bottom:2px}
+.int-desc{font-size:0.72rem;color:var(--muted2)}
+.int-toggle{width:44px;height:24px;border-radius:12px;background:var(--border2);border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.int-toggle.on{background:var(--green)}
+.int-toggle::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s}
+.int-toggle.on::after{left:23px}
+.connect-btn{background:var(--gold);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap}
+
+/* ── PIPELINE TRANSFER ── */
+.transfer-card{background:linear-gradient(135deg,rgba(124,82,200,.05),rgba(47,111,189,.05));border:1px solid rgba(124,82,200,.15);border-radius:16px;padding:14px;margin-bottom:10px}
+.transfer-label{font-size:0.7rem;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.transfer-name{font-size:0.95rem;font-weight:700;font-family:'Syne',sans-serif}
+.transfer-detail{font-size:0.75rem;color:var(--muted2);margin-top:2px}
+
+.follow-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;box-shadow:var(--shadow-sm)}
+.follow-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9rem;flex-shrink:0}
+.follow-info{flex:1}
+.follow-name{font-size:0.88rem;font-weight:600}
+.follow-detail{font-size:0.7rem;color:var(--muted2);margin-top:2px}
+
+.call-log-entry{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;border-left:3px solid var(--blue);box-shadow:var(--shadow-sm)}
+.call-log-top{display:flex;justify-content:space-between;align-items:center}
+.call-log-name{font-size:0.88rem;font-weight:600}
+.call-log-time{font-size:0.67rem;color:var(--muted);font-family:'DM Mono',monospace}
+.call-log-note{font-size:0.78rem;color:var(--muted2);margin-top:5px;line-height:1.4}
+.outcome-pill{font-size:0.62rem;padding:2px 8px;border-radius:10px;font-weight:700}
+.outcome-pill.interested{background:rgba(26,158,110,.10);color:var(--green)}
+.outcome-pill.callback{background:rgba(181,120,10,.10);color:var(--warm)}
+.outcome-pill.not-interested{background:rgba(217,64,64,.10);color:var(--red)}
+
+.empty{text-align:center;color:var(--muted);padding:36px 20px;font-size:0.85rem}
+.empty .empty-icon{font-size:2.2rem;margin-bottom:8px}
+
+/* ── ACCESS DENIED ── */
+.access-denied{text-align:center;padding:48px 20px;color:var(--muted)}
+.access-denied .ad-icon{font-size:2.8rem;margin-bottom:12px}
+.access-denied p{font-size:0.85rem;line-height:1.6}
+
+/* ── ADMIN TABS ── */
+.tab-row{display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:2px}
+.tab-btn{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:7px 16px;font-size:0.75rem;font-weight:600;color:var(--muted2);cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .2s}
+.tab-btn.active{background:var(--gold);color:#fff;border-color:var(--gold)}
+
+/* ── OUTCOME CHIPS ── */
+.outcome-chip{
+  background:var(--bg);border:1.5px solid var(--border);border-radius:10px;
+  padding:9px 8px;text-align:center;font-size:0.75rem;font-weight:600;
+  cursor:pointer;transition:all .15s;color:var(--text2);line-height:1.3
+}
+.outcome-chip:active{transform:scale(.97)}
+.outcome-chip.sel-not_picked   {background:rgba(47,111,189,.12);border-color:var(--blue);color:var(--blue)}
+.outcome-chip.sel-switched_off {background:rgba(47,111,189,.12);border-color:var(--blue);color:var(--blue)}
+.outcome-chip.sel-no_network   {background:rgba(47,111,189,.12);border-color:var(--blue);color:var(--blue)}
+.outcome-chip.sel-callback     {background:rgba(181,120,10,.12);border-color:var(--gold);color:var(--gold)}
+.outcome-chip.sel-not_interested{background:rgba(217,64,64,.12);border-color:var(--red);color:var(--red)}
+.outcome-chip.sel-interested   {background:rgba(26,158,110,.12);border-color:var(--green);color:var(--green)}
+
+
+/* ── DIAL PAD ── */
+.dialpad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}
+.dialpad-btn{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:20px;font-size:1.8rem;font-weight:700;color:var(--text);cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;min-height:70px;box-shadow:var(--shadow-sm)}
+.dialpad-btn:active{transform:scale(.95);background:var(--goldbg);border-color:var(--gold)}
+.dialpad-btn.action{background:var(--green);color:#fff;border-color:var(--green);font-size:1.2rem}
+.dialpad-btn.delete{background:var(--red);color:#fff;border-color:var(--red);font-size:1.2rem}
+.dialpad-display{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:20px;text-align:center;font-size:1.8rem;font-family:monospace;color:var(--text);min-height:70px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;letter-spacing:3px;box-shadow:var(--shadow-sm)}
+.dialpad-display.empty{color:var(--muted);font-size:1rem;letter-spacing:0}
+.dial-floating-btn{position:fixed;bottom:90px;right:18px;width:52px;height:52px;border-radius:50%;background:var(--green);color:#fff;border:none;font-size:1.4rem;cursor:pointer;box-shadow:0 4px 14px rgba(26,158,110,.35);z-index:99;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.dial-floating-btn:hover{transform:translateY(-2px)}
+.dial-floating-btn:active{transform:scale(.9)}
+::-webkit-scrollbar{width:0}
+</style>
+</head>
+<body>
+
+<!-- ════════════ LOGIN ════════════ -->
+<div id="loginScreen">
+  <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:20px">
+    <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDQgMTA0Ij4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaUciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI0ZGRTY4MCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjUwJSIgc3RvcC1jb2xvcj0iI0ZGRDcwMCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImlHMiIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNGRkQ3MDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjRThBODAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iaUdsb3ciPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIyLjUiIHJlc3VsdD0iYiIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPCEtLSBPdXRlciBkYXNoZWQgcmluZyAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSI0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ1cmwoI2lHKSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1kYXNoYXJyYXk9IjYgNSIgb3BhY2l0eT0iMC40NSIvPgogIDwhLS0gTWlkIHJpbmcgLS0+CiAgPGNpcmNsZSBjeD0iNTIiIGN5PSI1MiIgcj0iMzkiIGZpbGw9Im5vbmUiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEiIG9wYWNpdHk9IjAuMiIvPgogIDwhLS0gSW5uZXIgZmlsbGVkIGNpcmNsZSAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSIzMiIgZmlsbD0iIzBmMGYwMCIgb3BhY2l0eT0iMC45NyIvPgogIDxjaXJjbGUgY3g9IjUyIiBjeT0iNTIiIHI9IjMyIiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjaUcpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC44NSIvPgogIDwhLS0gQ29ubmVjdGlvbiBsaW5lcyAtLT4KICA8bGluZSB4MT0iNTIiIHkxPSI1MiIgeDI9IjI0IiB5Mj0iMjgiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC43NSIvPgogIDxsaW5lIHgxPSI1MiIgeTE9IjUyIiB4Mj0iODAiIHkyPSIyOCIgc3Ryb2tlPSJ1cmwoI2lHMikiIHN0cm9rZS13aWR0aD0iMS41IiBvcGFjaXR5PSIwLjc1Ii8+CiAgPGxpbmUgeDE9IjUyIiB5MT0iNTIiIHgyPSI4MCIgeTI9Ijc2IiBzdHJva2U9InVybCgjaUcyKSIgc3Ryb2tlLXdpZHRoPSIxLjUiIG9wYWNpdHk9IjAuNzUiLz4KICA8bGluZSB4MT0iNTIiIHkxPSI1MiIgeDI9IjI0IiB5Mj0iNzYiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC43NSIvPgogIDwhLS0gU2F0ZWxsaXRlIG5vZGVzIC0tPgogIDxjaXJjbGUgY3g9IjI0IiBjeT0iMjgiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjgwIiBjeT0iMjgiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjgwIiBjeT0iNzYiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjI0IiBjeT0iNzYiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDwhLS0gQ2VudGVyIGdvbGQgbm9kZSAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSIxMiIgZmlsbD0idXJsKCNpRykiIGZpbHRlcj0idXJsKCNpR2xvdykiLz4KICA8IS0tIFBlcnNvbiBpY29uIC0tPgogIDxjaXJjbGUgY3g9IjUyIiBjeT0iNDciIHI9IjQuMiIgZmlsbD0iIzBBMEEwQSIvPgogIDxwYXRoIGQ9Ik00Myw2MiBRNTIsNTUgNjEsNjIiIHN0cm9rZT0iIzBBMEEwQSIgc3Ryb2tlLXdpZHRoPSIyLjgiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4=" style="width:46px;height:46px;flex-shrink:0" alt="SKD">
+    <div style="line-height:1.1">
+      <div style="font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;letter-spacing:-1px;line-height:1"><span style="color:var(--gold)">SKD</span><span style="color:var(--text)">CRM</span></div>
+      <div style="font-size:0.62rem;color:var(--muted2);letter-spacing:2px;text-transform:uppercase;margin-top:1px">Sales Management</div>
+    </div>
+  </div>
+  <div class="login-sub">Sales &amp; Customer Development Management</div>
+  <div class="login-card">
+    <div class="login-title">Sign In to Your Panel</div>
+    <div class="form-group">
+      <label class="form-label">Select Your Role</label>
+      <div class="role-selector">
+        <div class="role-opt sel" onclick="selectRole('admin',this)">
+          <div class="role-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M3 17h18v2H3v-2zm1-2l2-7 3.5 3L12 5l2.5 6L18 8l2 7H4z" fill="#b5780a"/></svg></div>
+          <div class="role-name">Admin</div>
+        </div>
+        <div class="role-opt" onclick="selectRole('manager',this)">
+          <div class="role-icon">📋</div>
+          <div class="role-name">Manager</div>
+        </div>
+        <div class="role-opt" onclick="selectRole('executive',this)">
+          <div class="role-icon">📞</div>
+          <div class="role-name">Executive</div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Your Name *</label>
+      <input class="form-input" id="loginName" type="text" placeholder="Tap to see your name..." style="margin-bottom:0" oninput="showNameSuggestions()" onfocus="showNameSuggestions()" autocomplete="off">
+      <div id="nameSuggestions" style="background:var(--card2);border:1px solid var(--border);border-radius:0 0 10px 10px;margin-top:-1px;display:none;"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div style="position:relative">
+        <input class="form-input" id="loginPass" type="password" placeholder="Enter password" style="margin-bottom:0;padding-right:44px">
+        <button onclick="togglePassVis()" type="button" id="eyeBtn" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted2);padding:0;line-height:1">👁️</button>
+      </div>
+    </div>
+    <br>
+    <button class="btn-primary" onclick="doLogin()">Login →</button>
+
+  </div>
+</div>
+
+<!-- ════════════ APP ════════════ -->
+<div id="appShell">
+  <div class="topbar">
+    <div class="topbar-logo" style="display:flex;align-items:center;gap:8px">
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDQgMTA0Ij4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iaUciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI0ZGRTY4MCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjUwJSIgc3RvcC1jb2xvcj0iI0ZGRDcwMCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImlHMiIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNGRkQ3MDAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjRThBODAwIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iaUdsb3ciPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIyLjUiIHJlc3VsdD0iYiIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPCEtLSBPdXRlciBkYXNoZWQgcmluZyAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSI0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ1cmwoI2lHKSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1kYXNoYXJyYXk9IjYgNSIgb3BhY2l0eT0iMC40NSIvPgogIDwhLS0gTWlkIHJpbmcgLS0+CiAgPGNpcmNsZSBjeD0iNTIiIGN5PSI1MiIgcj0iMzkiIGZpbGw9Im5vbmUiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEiIG9wYWNpdHk9IjAuMiIvPgogIDwhLS0gSW5uZXIgZmlsbGVkIGNpcmNsZSAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSIzMiIgZmlsbD0iIzBmMGYwMCIgb3BhY2l0eT0iMC45NyIvPgogIDxjaXJjbGUgY3g9IjUyIiBjeT0iNTIiIHI9IjMyIiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjaUcpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC44NSIvPgogIDwhLS0gQ29ubmVjdGlvbiBsaW5lcyAtLT4KICA8bGluZSB4MT0iNTIiIHkxPSI1MiIgeDI9IjI0IiB5Mj0iMjgiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC43NSIvPgogIDxsaW5lIHgxPSI1MiIgeTE9IjUyIiB4Mj0iODAiIHkyPSIyOCIgc3Ryb2tlPSJ1cmwoI2lHMikiIHN0cm9rZS13aWR0aD0iMS41IiBvcGFjaXR5PSIwLjc1Ii8+CiAgPGxpbmUgeDE9IjUyIiB5MT0iNTIiIHgyPSI4MCIgeTI9Ijc2IiBzdHJva2U9InVybCgjaUcyKSIgc3Ryb2tlLXdpZHRoPSIxLjUiIG9wYWNpdHk9IjAuNzUiLz4KICA8bGluZSB4MT0iNTIiIHkxPSI1MiIgeDI9IjI0IiB5Mj0iNzYiIHN0cm9rZT0idXJsKCNpRzIpIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC43NSIvPgogIDwhLS0gU2F0ZWxsaXRlIG5vZGVzIC0tPgogIDxjaXJjbGUgY3g9IjI0IiBjeT0iMjgiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjgwIiBjeT0iMjgiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjgwIiBjeT0iNzYiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjI0IiBjeT0iNzYiIHI9IjciIGZpbGw9IiMwQTBBMEEiIHN0cm9rZT0idXJsKCNpRykiIHN0cm9rZS13aWR0aD0iMiIvPgogIDwhLS0gQ2VudGVyIGdvbGQgbm9kZSAtLT4KICA8Y2lyY2xlIGN4PSI1MiIgY3k9IjUyIiByPSIxMiIgZmlsbD0idXJsKCNpRykiIGZpbHRlcj0idXJsKCNpR2xvdykiLz4KICA8IS0tIFBlcnNvbiBpY29uIC0tPgogIDxjaXJjbGUgY3g9IjUyIiBjeT0iNDciIHI9IjQuMiIgZmlsbD0iIzBBMEEwQSIvPgogIDxwYXRoIGQ9Ik00Myw2MiBRNTIsNTUgNjEsNjIiIHN0cm9rZT0iIzBBMEEwQSIgc3Ryb2tlLXdpZHRoPSIyLjgiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4=" style="width:28px;height:28px;flex-shrink:0" alt="SKD">
+      <span style="font-family:'Syne',sans-serif;font-weight:800;font-size:1.05rem"><span style="color:var(--gold)">SKD</span><span style="color:var(--text)">CRM</span></span>
+    </div>
+    <div class="topbar-right">
+      <span class="role-badge" id="roleBadge">Admin</span>
+      <div class="topbar-user">
+        <strong id="topName">Admin</strong>
+        <span id="topDate"></span>
+      </div>
+      <span id="locationIndicator" style="font-size:.7rem;color:var(--muted2);font-weight:600;display:none"></span>
+      <button class="logout-btn" onclick="logout()" title="Logout">⎋</button>
+    </div>
+  </div>
+
+  <!-- PAGES -->
+  <div class="page active" id="page-dashboard"></div>
+  <div class="page" id="page-leads"></div>
+  <div class="page" id="page-add"></div>
+  <div class="page" id="page-plots"></div>
+  <div class="page" id="page-more"></div>
+
+  <div class="bottom-nav" id="bottomNav"></div>
+  <button class="dial-floating-btn" onclick="openDialPad()" title="Manual Dial">📞</button>
+</div>
+
+<!-- ══ LEAD DETAIL MODAL ══ -->
+<div class="modal-overlay" id="leadModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('leadModal')">✕</button>
+    <div class="modal-title" id="modal-leadname">Lead Details</div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ══ CALL LOG MODAL ══ -->
+<div class="modal-overlay" id="callModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('callModal')">✕</button>
+    <div class="modal-title">📞 Call & Log</div>
+
+    <!-- Customer info + dial buttons -->
+    <div id="callModalInfo" style="background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px">
+      <div style="font-size:.75rem;color:var(--muted2);margin-bottom:4px">Calling</div>
+      <div id="callModalName" style="font-family:'Syne',sans-serif;font-weight:700;font-size:1rem;margin-bottom:10px"></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <a id="callModalPhone1Btn" href="#" style="display:flex;align-items:center;justify-content:space-between;background:var(--green);color:#fff;border-radius:12px;padding:12px 16px;text-decoration:none;font-weight:700;font-size:.9rem">
+          <span id="callModalPhone1">—</span>
+          <span>📞 Call</span>
+        </a>
+        <a id="callModalPhone2Btn" href="#" style="display:none;align-items:center;justify-content:space-between;background:var(--blue);color:#fff;border-radius:12px;padding:12px 16px;text-decoration:none;font-weight:700;font-size:.9rem">
+          <span id="callModalPhone2">—</span>
+          <span>📞 Alt</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Outcome chips -->
+    <div class="form-group">
+      <label class="form-label">Call Outcome *</label>
+      <div id="outcomeChips" style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px">
+        <div class="outcome-chip" data-val="not_picked"    onclick="selectOutcome(this)">📵 Not Picked</div>
+        <div class="outcome-chip" data-val="switched_off"  onclick="selectOutcome(this)">🔇 Switched Off</div>
+        <div class="outcome-chip" data-val="no_network"    onclick="selectOutcome(this)">📶 No Network</div>
+        <div class="outcome-chip" data-val="callback"      onclick="selectOutcome(this)">🔄 Call Back Later</div>
+        <div class="outcome-chip" data-val="not_interested" onclick="selectOutcome(this)">❌ Not Interested</div>
+        <div class="outcome-chip" data-val="interested"    onclick="selectOutcome(this)">🔥 Lead Interested</div>
+      </div>
+      <input type="hidden" id="call-outcome" value="">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Follow-up Date</label>
+      <input class="form-input" id="call-followup" type="date">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="call-notes" placeholder="What did the customer say..."></textarea>
+    </div>
+    <button class="btn-primary" onclick="saveCall()">📋 Save Call Log</button>
+  </div>
+</div>
+
+<!-- ══ TRANSFER MODAL ══ -->
+<div class="modal-overlay" id="transferModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('transferModal')">✕</button>
+    <div class="modal-title">🔄 Transfer to Sales Manager</div>
+    <p style="font-size:.8rem;color:var(--muted2);margin-bottom:16px">This lead will be passed to a Sales Manager for deal closing.</p>
+    <div class="form-group">
+      <label class="form-label">Select Manager</label>
+      <select class="form-select" id="transfer-manager" id="transfer-manager">
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Transfer Note</label>
+      <textarea class="form-textarea" id="transfer-note" placeholder="Why are you transferring this lead?"></textarea>
+    </div>
+    <br>
+    <button class="btn-primary" onclick="doTransfer()">✅ Transfer Lead</button>
+  </div>
+</div>
+
+<!-- ══ PLOT MODAL ══ -->
+<div class="modal-overlay" id="plotModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('plotModal')">✕</button>
+    <div class="modal-title" id="plot-modal-title">Plot Details</div>
+    <div id="plot-modal-body"></div>
+  </div>
+</div>
+
+<!-- Auto Dial Modal -->
+<div class="modal-overlay" id="autoDialModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('autoDialModal')">✕</button>
+    <div class="modal-title">📞 Auto Dial Queue</div>
+    <div id="autoDialBody"></div>
+  </div>
+</div>
+
+<!-- Manual Dial Pad Modal -->
+<div class="modal-overlay" id="dialPadModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeModal('dialPadModal')">✕</button>
+    <div class="modal-title">📞 Manual Dial Pad</div>
+    <div class="dialpad-display" id="dialDisplay">Enter Number</div>
+    <div class="dialpad-grid">
+      <button class="dialpad-btn" onclick="dialPadInput('1')">1</button>
+      <button class="dialpad-btn" onclick="dialPadInput('2')">2</button>
+      <button class="dialpad-btn" onclick="dialPadInput('3')">3</button>
+      <button class="dialpad-btn" onclick="dialPadInput('4')">4</button>
+      <button class="dialpad-btn" onclick="dialPadInput('5')">5</button>
+      <button class="dialpad-btn" onclick="dialPadInput('6')">6</button>
+      <button class="dialpad-btn" onclick="dialPadInput('7')">7</button>
+      <button class="dialpad-btn" onclick="dialPadInput('8')">8</button>
+      <button class="dialpad-btn" onclick="dialPadInput('9')">9</button>
+      <button class="dialpad-btn" onclick="dialPadInput('*')">*</button>
+      <button class="dialpad-btn" onclick="dialPadInput('0')">0</button>
+      <button class="dialpad-btn" onclick="dialPadInput('#')">#</button>
+      <button class="dialpad-btn delete" onclick="dialPadDelete()">⌫</button>
+      <button class="dialpad-btn action" onclick="dialPadCall()" style="grid-column:span 2">📞 Call</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+//  SUPABASE CONFIG
+// ══════════════════════════════════════════
+const SUPA_URL = 'https://uewhfywvfprgrwmfyqjk.supabase.co';
+// ⚠️ PASTE YOUR SUPABASE ANON KEY BELOW
+// Get it from: supabase.com → your project → Settings → API → anon/public key
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVld2hmeXd2ZnByZ3J3bWZ5cWprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MzQxODAsImV4cCI6MjA4ODQxMDE4MH0.-6gZSeXfUHDdtWpdBiwfmjzcULUDr_f84r5jMzYwv6o';
+
+let db = null;
+let supabaseReady = false;
+
+function initSupabase(){
+  try {
+    if(typeof supabase !== 'undefined' && supabase.createClient){
+      db = supabase.createClient(SUPA_URL, SUPA_KEY);
+      supabaseReady = true;
+      console.log('✅ Supabase connected');
+    }
+  } catch(e){
+    console.warn('Supabase init failed, using localStorage:', e);
+    supabaseReady = false;
+  }
+}
+
+// Safe Supabase wrapper — never crashes, falls back to localStorage
+async function dbGet(table){
+  if(!supabaseReady || !db) return null;
+  try {
+    const {data, error} = await db.from(table).select('*');
+    if(error) throw error;
+    return data;
+  } catch(e){ console.warn('dbGet failed:', table, e); return null; }
+}
+
+async function dbUpsert(table, row){
+  if(!supabaseReady || !db) return;
+  try {
+    const {error} = await db.from(table).upsert(row, {onConflict:'id'});
+    if(error) throw error;
+  } catch(e){ console.warn('dbUpsert failed:', table, e); }
+}
+async function loadUsersFromCloud(){
+  try{
+    const cloudUsers = await dbGet('app_users');
+    if(!cloudUsers) return;
+
+    const usersRow = cloudUsers.find(r => r.id === 'users');
+
+    if(usersRow){
+      USERS = JSON.parse(usersRow.data || '{}');
+      console.log("Users loaded from Supabase");
+    }
+  }catch(e){
+    console.log("User sync failed", e);
+  }
+}
+async function dbDelete(table, id){
+  if(!supabaseReady || !db) return;
+  try {
+    const {error} = await db.from(table).delete().eq('id', id);
+    if(error) throw error;
+  } catch(e){ console.warn('dbDelete failed:', table, e); }
+}
+
+async function dbSet(table, key, value){
+  // For simple key-value settings (users, config)
+  if(!supabaseReady || !db) return;
+  try {
+    const {error} = await db.from(table).upsert({id: key, data: JSON.stringify(value)}, {onConflict:'id'});
+    if(error) throw error;
+  } catch(e){ console.warn('dbSet failed:', table, e); }
+}
+
+// Load all data from Supabase, merge with localStorage
+async function syncFromCloud(){
+  if(!supabaseReady) return;
+  showSyncBanner('☁️ Syncing data...');
+  try {
+    // Load leads
+    const cloudLeads = await dbGet('leads');
+    if(cloudLeads && cloudLeads.length > 0){
+      leads = cloudLeads.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
+      localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+    }
+    // Load call logs
+    const cloudCalls = await dbGet('call_logs');
+    if(cloudCalls && cloudCalls.length > 0){
+      callLogs = cloudCalls.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
+      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+    }
+    // Load users
+   const cloudUsers = await dbGet('app_users');
+
+if (cloudUsers && cloudUsers.length > 0) {
+  const usersRow = cloudUsers.find(r => r.id === 'users');
+
+  if (usersRow && usersRow.data) {
+    USERS = typeof usersRow.data === "string"
+      ? JSON.parse(usersRow.data)
+      : usersRow.data;
+
+    localStorage.setItem('ycrm_users', JSON.stringify(USERS));
+  }
+}
+    showSyncBanner('✅ Synced!', true);
+    renderDashboard();
+  } catch(e){
+    console.warn('Sync failed:', e);
+    showSyncBanner('⚠️ Offline mode', true);
+  }
+}
+
+function showSyncBanner(msg, fadeOut=false){
+  let b = document.getElementById('syncBanner');
+  if(!b){ b = document.createElement('div'); b.id='syncBanner';
+    b.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(14,20,32,.92);color:var(--gold);font-size:.72rem;font-weight:700;padding:6px 16px;border-radius:20px;z-index:9999;backdrop-filter:blur(6px);border:1px solid rgba(232,160,32,.3);transition:opacity .5s';
+    document.body.appendChild(b);
+  }
+  b.textContent = msg; b.style.opacity='1';
+  if(fadeOut) setTimeout(()=>{ b.style.opacity='0'; }, 2000);
+}
+
+// Push a single lead to cloud
+async function pushLead(lead){
+  if(!supabaseReady) return;
+  await dbUpsert('leads', {id: lead.id, data: JSON.stringify(lead)});
+}
+
+// Push all call logs to cloud (push latest only)
+async function pushCallLog(log){
+  if(!supabaseReady) return;
+  await dbUpsert('call_logs', {id: log.id, data: JSON.stringify(log)});
+}
+
+// Push users to cloud
+async function pushUsers(){
+  if(!supabaseReady) return;
+  await dbSet('app_users', 'users', USERS);
+}
+
+// Subscribe to real-time changes
+function startRealtimeSync(){
+  if(!supabaseReady || !db) return;
+  db.channel('crm-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'leads'}, () => syncFromCloud())
+    .on('postgres_changes', {event:'*', schema:'public', table:'call_logs'}, () => syncFromCloud())
+    .on('postgres_changes', {event:'*', schema:'public', table:'app_users'}, () => syncFromCloud())
+    .subscribe();
+}
+
+// ══════════════════════════════════════════
+//  DATA STORE
+// ══════════════════════════════════════════
+const DEFAULT_USERS = {
+  admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2024-01-01'}],
+  manager:[],
+  executive:[]
+};
+let USERS = JSON.parse(localStorage.getItem('ycrm_users')||'null') || DEFAULT_USERS;
+// Passwords stored per-user in USERS object
+function saveUsers(){
+  localStorage.setItem('ycrm_users',JSON.stringify(USERS));
+  if(supabaseReady) pushUsers().catch(()=>{});
+}
+
+let currentRole = 'admin';
+let currentUser = '';
+let activeLeadId = null;
+let activePlotId = null;
+let leadFilter = 'All';
+let plotFilter = 'All';
+let adminTab = 'team';
+
+let leads = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
+let callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
+let plots = JSON.parse(localStorage.getItem('ycrm_plots')||'null') || [
+  {id:'YD-A101',sector:'Sector 22D',size:'100 sq yd',price:'₹18L',status:'Available'},
+  {id:'YD-A102',sector:'Sector 22D',size:'200 sq yd',price:'₹34L',status:'Booked'},
+  {id:'YD-B201',sector:'Sector 24', size:'100 sq yd',price:'₹16L',status:'Available'},
+  {id:'YD-B202',sector:'Sector 24', size:'300 sq yd',price:'₹48L',status:'Hold'},
+  {id:'YD-C301',sector:'Sector 25', size:'500 sq yd',price:'₹75L',status:'Available'},
+  {id:'YD-C302',sector:'Sector 25', size:'100 sq yd',price:'₹17L',status:'Available'},
+  {id:'YD-D401',sector:'Sector 28', size:'200 sq yd',price:'₹30L',status:'Booked'},
+  {id:'YD-D402',sector:'Sector 28', size:'1000 sq yd',price:'₹1.4Cr',status:'Available'},
+];
+let integrations = JSON.parse(localStorage.getItem('ycrm_int')||'{"sheets":false,"email":false,"acres99":false}');
+
+// Office location & geofence
+let officeLocation = JSON.parse(localStorage.getItem('ycrm_office_loc')||'null');
+// {lat, lng, radius (meters), name}
+
+// User location tracking: {userId: {lat, lng, inOffice, lastSeen, status}}
+let locationLogs = JSON.parse(localStorage.getItem('ycrm_locs')||'{}');
+function saveLocs(){ localStorage.setItem('ycrm_locs', JSON.stringify(locationLogs)); }
+function saveOfficeLoc(){ localStorage.setItem('ycrm_office_loc', JSON.stringify(officeLocation)); }
+
+// Custom follow-up stages (admin configurable)
+let followupStages = JSON.parse(localStorage.getItem('ycrm_stages')||'null') || [
+  {id:'s1', label:'Site Visit Scheduled', icon:'🏗️'},
+  {id:'s2', label:'Call Back Requested',  icon:'📞'},
+  {id:'s3', label:'Brochure Sent',        icon:'📄'},
+  {id:'s4', label:'Meeting Done',         icon:'🤝'},
+  {id:'s5', label:'Price Negotiation',    icon:'💰'},
+  {id:'s6', label:'Deal Closed',          icon:'✅'},
+  {id:'s7', label:'Not Interested',       icon:'❌'},
+  {id:'s8', label:'Something Else',       icon:'📝'},
+];
+function saveStages(){ localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
+
+// Geofence helper
+function distanceMeters(lat1,lon1,lat2,lon2){
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function checkGeofence(lat,lng){
+  if(!officeLocation) return null;
+  const d=distanceMeters(lat,lng,officeLocation.lat,officeLocation.lng);
+  return d<=officeLocation.radius;
+}
+
+// Start location tracking for non-admin users
+let geoWatchId = null;
+function startLocationTracking(){
+  if(currentRole==='admin') return;
+  if(!navigator.geolocation){ return; }
+  geoWatchId = navigator.geolocation.watchPosition(pos=>{
+    const {latitude:lat, longitude:lng} = pos.coords;
+    const inOffice = checkGeofence(lat, lng);
+    // Always use user id as key
+    const userObj = USERS[currentRole].find(u=>u.name===currentUser);
+    const uid = userObj ? userObj.id : ('u_'+currentUser);
+    locationLogs[uid] = {
+      uid, name: currentUser, role: currentRole,
+      lat, lng, inOffice,
+      lastSeen: new Date().toISOString(),
+      accuracy: pos.coords.accuracy
+    };
+    saveLocs();
+    // Update topbar indicator
+    const ind = document.getElementById('locationIndicator');
+    if(ind){
+      if(inOffice===null){ ind.textContent='📍 Locating...'; ind.style.color='var(--muted2)'; }
+      else if(inOffice){ ind.textContent='🏢 In Office'; ind.style.color='var(--green)'; }
+      else { ind.textContent='🚗 Outside'; ind.style.color='var(--gold)'; }
+    }
+  }, err=>{
+    const ind = document.getElementById('locationIndicator');
+    if(ind){ ind.textContent='📍 No GPS'; ind.style.color='var(--red)'; }
+  }, {enableHighAccuracy:true, maximumAge:15000, timeout:15000});
+}
+// Round-robin pointer: tracks which manager gets the next lead
+let rrIndex = parseInt(localStorage.getItem('ycrm_rr')||'0');
+// 'roundrobin' or 'manual'
+let leadAssignMode = localStorage.getItem('ycrm_assign_mode')||'roundrobin';
+
+function saveRR(){ localStorage.setItem('ycrm_rr', rrIndex); }
+function saveAssignMode(){ localStorage.setItem('ycrm_assign_mode', leadAssignMode); }
+
+// Get next manager via round-robin (only active managers)
+function getNextManager(){
+  const mgrs = USERS.manager.filter(u=>u.active);
+  if(mgrs.length===0) return null;
+  rrIndex = rrIndex % mgrs.length;
+  const mgr = mgrs[rrIndex];
+  rrIndex = (rrIndex + 1) % mgrs.length;
+  saveRR();
+  return mgr.name;
+}
+
+// Check duplicate by phone — returns existing lead or null
+function findDuplicate(phone){
+  const clean = phone.replace(/\D/g,'');
+  return leads.find(l=>l.phone.replace(/\D/g,'')===clean || (l.phone2&&l.phone2.replace(/\D/g,'')===clean)) || null;
+}
+
+function save(){
+  localStorage.setItem('ycrm_leads',JSON.stringify(leads));
+  localStorage.setItem('ycrm_calls',JSON.stringify(callLogs));
+  localStorage.setItem('ycrm_plots',JSON.stringify(plots));
+  localStorage.setItem('ycrm_int',JSON.stringify(integrations));
+  // Silently push to Supabase cloud (non-blocking)
+  if(supabaseReady){
+    leads.forEach(l => pushLead(l).catch(()=>{}));
+  }
+}
+
+// No seed data — starts clean
+
+// ══════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════
+function selectRole(role, el){
+  currentRole = role;
+  document.querySelectorAll('.role-opt').forEach(r=>r.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('loginName').value = '';
+  document.getElementById('nameSuggestions').style.display = 'none';
+  // auto show all users for this role
+  setTimeout(showNameSuggestions, 50);
+  document.getElementById('loginPass').value = '';
+}
+
+function showNameSuggestions(){
+  const inp = document.getElementById('loginName');
+  const box = document.getElementById('nameSuggestions');
+  const q = inp.value.toLowerCase().trim();
+  const users = USERS[currentRole].filter(u=>u.active && (q==='' || u.name.toLowerCase().includes(q)));
+  if(users.length===0){ box.style.display='none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = users.map(u=>{
+    const n = u.name.replace(/'/g,"&#39;");
+    return '<div onclick="selectName(&#34;'+n+'&#34;)" style="padding:10px 14px;font-size:.88rem;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s">'+u.name+'</div>';
+  }).join('');
+}
+
+function selectName(name){
+  document.getElementById('loginName').value = name;
+  document.getElementById('nameSuggestions').style.display = 'none';
+}
+
+// close suggestions when clicking outside
+document.addEventListener('click', function(e){
+  const box = document.getElementById('nameSuggestions');
+  const inp = document.getElementById('loginName');
+  if(box && inp && !inp.contains(e.target) && !box.contains(e.target)){
+    box.style.display='none';
+  }
+});
+
+function populateLoginDropdown(){ /* legacy stub */ }
+
+function togglePassVis(){
+  const inp = document.getElementById('loginPass');
+  const btn = document.getElementById('eyeBtn');
+  if(inp.type==='password'){ inp.type='text'; btn.textContent='🙈'; }
+  else { inp.type='password'; btn.textContent='👁️'; }
+}
+
+async function doLogin(){
+  const pass = document.getElementById('loginPass').value;
+  const name = document.getElementById('loginName').value.trim();
+  document.getElementById('nameSuggestions').style.display = 'none';
+  if(!name){ showToast('Please enter your name','error'); return; }
+  // find user in role — case-insensitive
+  const userObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
+  if(!userObj){
+    const exists = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase());
+    if(exists && !exists.active){ showToast('Account deactivated. Contact Admin.','error'); }
+    else { showToast('Name not found for this role','error'); }
+    return;
+  }
+  // First-time admin: hash-verified default credential
+  if(userObj.pass === '__CHANGE_ON_FIRST_LOGIN__'){
+    const enc = new TextEncoder();
+    const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(pass));
+    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    if(hashHex !== '3e2c1ab591f299c67ac3fdd592659aa502252f8f402ef87f3a9b6d17a9b5abef'){
+      showToast('Wrong password! ❌','error'); return;
+    }
+    setTimeout(()=>{
+      showToast('⚠️ Please change your password now!','error');
+      goPage('more', document.querySelector('.nav-btn[data-id="more"]')||document.querySelector('.nav-btn'));
+      setTimeout(()=>{ switchAdminTab('users'); }, 400);
+    }, 1000);
+  } else {
+    if(pass !== userObj.pass){ showToast('Wrong password! ❌','error'); return; }
+  }
+  currentUser = name;
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appShell').style.display='block';
+  document.getElementById('topName').textContent = name.split(' ')[0];
+  document.getElementById('topDate').textContent = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+  const rb = document.getElementById('roleBadge');
+  rb.textContent = currentRole.charAt(0).toUpperCase()+currentRole.slice(1);
+  rb.className = 'role-badge '+currentRole;
+  document.getElementById('call-followup').value = new Date().toISOString().slice(0,10);
+  const locInd = document.getElementById('locationIndicator');
+  if(locInd) locInd.style.display = currentRole!=='admin' ? 'inline' : 'none';
+  buildNav();
+  goPage('dashboard', document.querySelector('.nav-btn'));
+  startLocationTracking();
+  // Init cloud sync after login
+  syncFromCloud().then(()=>{ startRealtimeSync(); });
+}
+
+function logout(){
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('appShell').style.display='none';
+  document.getElementById('loginPass').value='';
+}
+
+// ══════════════════════════════════════════
+//  NAV
+// ══════════════════════════════════════════
+const NAV_CONFIG = {
+  admin:[
+    {id:'dashboard',icon:'🏠',label:'Home'},
+    {id:'leads',icon:'👥',label:'All Leads'},
+    {id:'add',icon:'➕',label:'Add Lead'},
+    {id:'plots',icon:'🏗️',label:'Plots'},
+    {id:'more',icon:'⚙️',label:'Admin'},
+  ],
+  manager:[
+    {id:'dashboard',icon:'🏠',label:'Home'},
+    {id:'leads',icon:'👥',label:'My Leads'},
+    {id:'add',icon:'➕',label:'Add Lead'},
+    {id:'plots',icon:'🏗️',label:'Plots'},
+    {id:'more',icon:'📊',label:'Pipeline'},
+  ],
+  executive:[
+    {id:'dashboard',icon:'🏠',label:'Home'},
+    {id:'leads',icon:'📞',label:'My Calls'},
+    {id:'add',icon:'➕',label:'Add Lead'},
+    {id:'more',icon:'📤',label:'Transfer'},
+  ],
+};
+
+function buildNav(){
+  const nav = NAV_CONFIG[currentRole];
+  document.getElementById('bottomNav').innerHTML = nav.map(n=>
+    `<button class="nav-btn" onclick="goPage('${n.id}',this)" data-page="${n.id}">
+      <span class="nav-icon">${n.icon}</span>${n.label}
+    </button>`
+  ).join('');
+}
+
+function goPage(page, btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const p = document.getElementById('page-'+page);
+  if(p){ p.classList.add('active'); renderPage(page); }
+  if(btn) btn.classList.add('active');
+}
+
+function renderPage(page){
+  if(page==='dashboard') renderDashboard();
+  if(page==='leads') renderLeads();
+  if(page==='add') renderAddForm();
+  if(page==='plots') renderPlots();
+  if(page==='more') renderMore();
+}
+
+// ══════════════════════════════════════════
+//  DASHBOARD
+// ══════════════════════════════════════════
+function myLeads(){
+  if(currentRole==='admin') return leads;
+  // Manager sees leads assigned to them (either directly or via round-robin)
+  if(currentRole==='manager') return leads.filter(l=>l.assignedManager===currentUser||l.assigned===currentUser);
+  // Executive sees leads they generated (read-only after assignment)
+  return leads.filter(l=>l.generatedBy===currentUser || (l.assigned===currentUser && !l.assignedManager));
+}
+
+function renderDashboard(){
+  const ml = myLeads();
+  const hot = ml.filter(l=>l.status==='Hot').length;
+  const closed = ml.filter(l=>l.status==='Closed').length;
+  const today = new Date().toISOString().slice(0,10);
+  const todayCalls = callLogs.filter(c=>c.date===today&&(currentRole==='admin'||c.agent===currentUser)).length;
+  const avail = plots.filter(p=>p.status==='Available').length;
+  const booked = plots.filter(p=>p.status!=='Available').length;
+  const followups = ml.filter(l=>l.followup===today&&l.status!=='Closed');
+
+  let transferSection = '';
+  if(currentRole==='manager'){
+    const pending = leads.filter(l=>l.transferredTo===currentUser&&l.status==='transferred');
+    if(pending.length>0){
+      transferSection = '<div class="section-title">&#x1F514; New Leads from Executives ('+pending.length+')</div>'
+        + pending.map(l=>'<div class="transfer-card" onclick="openLead(\''+l.id+'\')">'
+          +'<div class="transfer-label">Transferred Lead</div>'
+          +'<div class="transfer-name">'+l.name+'</div>'
+          +'<div class="transfer-detail">&#x1F4DE; '+l.phone+' &middot; '+l.interest+'</div>'
+          +'<div style="margin-top:8px"><span class="badge transferred">Pending Review</span></div>'
+          +'</div>').join('');
+    }
+  }
+
+  // ── Team performance for admin ──
+  let teamSection = '';
+  if(currentRole==='admin'){
+    const buildMemberCard = (u, color, bgColor) => {
+      const uLeads      = leads.filter(l=>l.assigned===u.name).length;
+      const uHot        = leads.filter(l=>l.assigned===u.name&&l.status==='Hot').length;
+      const uCalls      = callLogs.filter(c=>c.agent===u.name).length;
+      const uCallsToday = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+      const uClosed     = leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length;
+      const uTransf     = leads.filter(l=>l.assigned===u.name&&l.status==='transferred').length;
+      const maxLeads    = Math.max(...[...USERS.manager,...USERS.executive].map(x=>leads.filter(l=>l.assigned===x.name).length),1);
+      const pct         = Math.round((uLeads/maxLeads)*100);
+      const activePill  = u.active
+        ? 'background:rgba(34,201,138,.1);color:var(--green);border:1px solid rgba(34,201,138,.2)'
+        : 'background:rgba(240,92,92,.1);color:var(--red);border:1px solid rgba(240,92,92,.2)';
+      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px">'
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        +   '<div style="width:38px;height:38px;border-radius:50%;background:'+bgColor+';color:'+color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
+        +     '<div style="font-size:.65rem;color:var(--muted2)">Today: '+uCallsToday+' calls &nbsp;&middot;&nbsp; Total: '+uCalls+' calls</div>'
+        +   '</div>'
+        +   '<span style="font-size:.58rem;font-weight:700;padding:2px 7px;border-radius:8px;'+activePill+'">'+(u.active?'Active':'Off')+'</span>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:8px">'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:'+color+'">'+uLeads+'</div><div style="font-size:.58rem;color:var(--muted)">Leads</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--hot)">'+uHot+'</div><div style="font-size:.58rem;color:var(--muted)">Hot</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--green)">'+uClosed+'</div><div style="font-size:.58rem;color:var(--muted)">Closed</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--purple)">'+uTransf+'</div><div style="font-size:.58rem;color:var(--muted)">Transf.</div></div>'
+        + '</div>'
+        + '<div style="width:100%;height:4px;background:var(--border);border-radius:2px">'
+        +   '<div style="width:'+pct+'%;height:100%;border-radius:2px;background:'+color+'"></div>'
+        + '</div></div>';
+    };
+    const mgrCards = USERS.manager.map(u=>buildMemberCard(u,'var(--blue)','rgba(77,142,240,.18)')).join('');
+    const excCards = USERS.executive.map(u=>buildMemberCard(u,'var(--green)','rgba(34,201,138,.18)')).join('');
+
+    // Location snapshot for dashboard
+    const allStaff = [...USERS.manager,...USERS.executive].filter(u=>u.active);
+    const locSnap = allStaff.map(u=>{
+      const loc = locationLogs[u.id];
+      const isManager = !!USERS.manager.find(x=>x.id===u.id);
+      const color = isManager ? 'var(--blue)' : 'var(--green)';
+      const bg = isManager ? 'rgba(77,142,240,.18)' : 'rgba(34,201,138,.18)';
+      let statusDot, statusText;
+      if(!loc){ statusDot='⬜'; statusText='No GPS'; }
+      else if(loc.inOffice===true){ statusDot='🟢'; statusText='In Office'; }
+      else if(loc.inOffice===false){ statusDot='🟡'; statusText='Outside'; }
+      else { statusDot='⚪'; statusText='Locating'; }
+      const mapHref = (loc&&loc.lat&&loc.inOffice===false) ? 'href="https://maps.google.com/?q='+loc.lat+','+loc.lng+'" target="_blank"' : '';
+      return '<a '+mapHref+' style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);text-decoration:none">'
+        +'<div style="width:30px;height:30px;border-radius:50%;background:'+bg+';color:'+color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:.8rem;flex-shrink:0">'+u.name[0]+'</div>'
+        +'<div style="flex:1;min-width:0"><div style="font-size:.8rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
+        +'<div style="font-size:.62rem;color:var(--muted)">'+(isManager?'Manager':'Executive')+'</div></div>'
+        +'<span style="font-size:.65rem;color:var(--muted2)">'+statusDot+' '+statusText+'</span>'
+        +'</a>';
+    }).join('');
+
+    const locPanel = '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between">'
+      +'<span>📡 Team Location</span>'
+      +'<span style="font-size:.65rem;color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">'
+      +allStaff.filter(u=>locationLogs[u.id]&&locationLogs[u.id].inOffice===true).length+' in office · '
+      +allStaff.filter(u=>locationLogs[u.id]&&locationLogs[u.id].inOffice===false).length+' outside'
+      +'</span></div>'
+      +'<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:10px">'
+      +(allStaff.length===0?'<div style="font-size:.78rem;color:var(--muted);text-align:center;padding:8px">No team</div>':locSnap)
+      +'</div>';
+
+    teamSection = locPanel
+      + '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between"><span>&#x1F4CB; Sales Managers</span><span style="font-size:.68rem;color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">'+USERS.manager.length+' members</span></div>'
+      + mgrCards
+      + '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between"><span>&#x1F4DE; Sales Executives</span><span style="font-size:.68rem;color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">'+USERS.executive.length+' members</span></div>'
+      + excCards;
+  }
+
+  const followupHTML = followups.length===0
+    ? '<div class="empty"><div class="empty-icon">&#x1F4ED;</div>No follow-ups scheduled today</div>'
+    : followups.map(l=>'<div class="follow-card" onclick="openLead(\''+l.id+'\')">'
+        +'<div class="follow-avatar" style="background:'+sColor(l.status)+'22;color:'+sColor(l.status)+'">'+l.name[0]+'</div>'
+        +'<div class="follow-info"><div class="follow-name">'+l.name+'</div><div class="follow-detail">&#x1F4DE; '+l.phone+' &middot; '+l.interest+'</div></div>'
+        +'<span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span>'
+        +'</div>').join('');
+
+  const plotStats = currentRole!=='executive'
+    ? '<div class="stats-grid" style="margin-top:10px">'
+      +'<div class="stat-card"><div class="stat-label">&#x1F7E2; Plots Available</div><div class="stat-value green">'+avail+'</div></div>'
+      +'<div class="stat-card"><div class="stat-label">&#x1F534; Booked / Hold</div><div class="stat-value red">'+booked+'</div></div>'
+      +'</div>' : '';
+
+  document.getElementById('page-dashboard').innerHTML =
+    '<div style="font-size:1rem;font-weight:600;font-family:\'Syne\',sans-serif;margin-bottom:3px">'
+    +'Hello, <span style="color:var(--gold)">'+currentUser.split(' ')[0]+'</span> &#x1F44B;'
+    +'</div>'
+    +'<div style="font-size:0.75rem;color:var(--muted2);margin-bottom:16px">Today\'s Overview</div>'
+    + transferSection
+    +'<div class="stats-grid">'
+    +'<div class="stat-card"><div class="stat-label">&#x1F525; Hot Leads</div><div class="stat-value gold">'+hot+'</div><div class="stat-sub">Follow up today</div></div>'
+    +'<div class="stat-card"><div class="stat-label">&#x1F4DE; Calls Today</div><div class="stat-value blue">'+todayCalls+'</div><div class="stat-sub">Logged</div></div>'
+    +'<div class="stat-card"><div class="stat-label">&#x2705; Closed</div><div class="stat-value green">'+closed+'</div><div class="stat-sub">This month</div></div>'
+    +'<div class="stat-card"><div class="stat-label">&#x1F4CB; Total Leads</div><div class="stat-value">'+ml.length+'</div><div class="stat-sub">In pipeline</div></div>'
+    +'</div>'
+    + plotStats
+    +'<div class="section-title">&#x23F0; Today\'s Follow-ups</div>'
+    + followupHTML
+    + teamSection;
+}
+
+
+function sColor(s){
+  if(s==='Hot') return '#f05c5c';
+  if(s==='Warm') return '#e8a020';
+  if(s==='Cold') return '#4d8ef0';
+  return '#22c98a';
+}
+
+// ══════════════════════════════════════════
+//  LEADS
+// ══════════════════════════════════════════
+function renderLeads(){
+  const chips = currentRole==='admin'
+    ? ['All','Hot','Warm','Cold','Closed','transferred']
+    : currentRole==='manager'
+    ? ['All','Hot','Warm','Cold','Closed','transferred']
+    : ['All','Hot','Warm','Cold'];
+
+  document.getElementById('page-leads').innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input class="search-bar" type="search" placeholder="🔍 Search by name or phone..." id="leadSearch" oninput="renderLeadsList()" style="flex:1;margin-bottom:0">
+      <button onclick="startBulkAutoDial()" style="background:var(--green);color:#fff;border:none;border-radius:10px;padding:0 14px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">▶▶ Bulk Dial</button>
+    </div>
+    <div class="filter-row" id="filterRow">
+      ${chips.map(c=>`<div class="filter-chip${c===leadFilter?' active':''}" onclick="setFilter('${c}',this)">${chipLabel(c)}</div>`).join('')}
+    </div>
+    <div id="leads-list"></div>
+  `;
+  renderLeadsList();
+}
+
+function chipLabel(c){
+  if(c==='Hot') return '🔥 Hot';
+  if(c==='Warm') return '🌤️ Warm';
+  if(c==='Cold') return '❄️ Cold';
+  if(c==='Closed') return '✅ Closed';
+  if(c==='transferred') return '🔄 Transferred';
+  return 'All';
+}
+
+function setFilter(f,el){
+  leadFilter=f;
+  document.querySelectorAll('#filterRow .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderLeadsList();
+}
+
+function renderLeadsList(){
+  const q=(document.getElementById('leadSearch')||{}).value||'';
+  let src = myLeads();
+  if(q) src=src.filter(l=>l.name.toLowerCase().includes(q.toLowerCase())||l.phone.includes(q));
+  if(leadFilter!=='All') src=src.filter(l=>l.status===leadFilter);
+
+  const el=document.getElementById('leads-list');
+  if(src.length===0){el.innerHTML='<div class="empty"><div class="empty-icon">👥</div>No leads found</div>';return;}
+  el.innerHTML=src.map(l=>`
+    <div class="lead-card" onclick="openLead('${l.id}')">
+      <div class="lead-top">
+        <div>
+          <div class="lead-name">${l.name}</div>
+          <div class="lead-phone">📞 ${l.phone}</div>
+        </div>
+        <span class="badge ${l.status.toLowerCase()}">${l.status}</span>
+      </div>
+      <div class="lead-meta">
+        <span class="lead-tag">📍 ${l.interest}</span>
+        <span class="lead-tag">👤 ${l.assigned}</span>
+        ${l.followup?`<span class="lead-tag">📅 ${l.followup}</span>`:''}
+      </div>
+      <div class="action-row">
+        <button class="action-btn" onclick="event.stopPropagation();startAutoDial(['${l.phone}'])">📞 Dial</button>
+        ${(currentRole!=='executive'||!l.assignedManager)?`<button class="action-btn primary" onclick="event.stopPropagation();openCallModal('${l.id}')">📋 Log</button>`:`<span style="flex:1;text-align:center;font-size:.68rem;color:var(--muted2);padding:8px 4px">👁️ Read-only · Assigned to ${l.assignedManager}</span>`}
+        ${currentRole==='admin'?`<button class="action-btn" onclick="event.stopPropagation();deleteLead('${l.id}')">🗑️</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════
+//  ADD LEAD FORM
+// ══════════════════════════════════════════
+function renderAddForm(){
+  const assignOpts = currentRole==='executive'
+    ? `<option>${currentUser}</option>`
+    : USERS.executive.filter(u=>u.active).map(u=>`<option>${u.name}</option>`).join('');
+
+  document.getElementById('page-add').innerHTML = `
+    <div class="section-title" style="margin-top:0">Add New Lead</div>
+    <div class="form-group"><label class="form-label">Customer Name *</label><input class="form-input" id="f-name" placeholder="e.g. Ramesh Kumar" type="text"></div>
+    <div class="form-group"><label class="form-label">Phone Number *</label><input class="form-input" id="f-phone" placeholder="98XXXXXXXX" type="tel"></div>
+    <div class="form-group"><label class="form-label">Alternate Phone</label><input class="form-input" id="f-phone2" placeholder="Optional" type="tel"></div>
+    <div class="form-group"><label class="form-label">Lead Source</label>
+      <select class="form-select" id="f-source">
+        <option>Purchased Data</option><option>Reference</option><option>Website</option>
+        <option>Walk-in</option><option>Social Media</option><option>99acres Inquiry</option><option>Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Plot Size Interest</label>
+      <select class="form-select" id="f-interest">
+        <option>100 sq yd</option><option>200 sq yd</option><option>300 sq yd</option>
+        <option>500 sq yd</option><option>1000 sq yd+</option><option>Not decided</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Lead Status</label>
+      <select class="form-select" id="f-status">
+        <option value="Hot">🔥 Hot – Very Interested</option>
+        <option value="Warm" selected>🌤️ Warm – Considering</option>
+        <option value="Cold">❄️ Cold – Not sure</option>
+      </select>
+    </div>
+    ${currentRole!=='executive'?`<div class="form-group"><label class="form-label">Assigned To</label><select class="form-select" id="f-assigned">${assignOpts}</select></div>`:''}
+    <div class="form-group"><label class="form-label">Follow-up Date</label><input class="form-input" id="f-followup" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Customer requirements or remarks..."></textarea></div>
+    <br><button class="btn-primary" onclick="addLead()">✅ Save Lead</button>
+  `;
+}
+
+function addLead(){
+  const name=(document.getElementById('f-name')||{}).value?.trim();
+  const phone=(document.getElementById('f-phone')||{}).value?.trim();
+  if(!name||!phone){showToast('Name and Phone are required! ⚠️','error');return;}
+
+  // ── DUPLICATE CHECK ──
+  const dup = findDuplicate(phone);
+  if(dup){
+    const dupMgr = dup.assignedManager || dup.transferredTo || dup.assigned;
+    showToast('⚠️ Duplicate! Already exists with '+dupMgr,'error');
+    // merge: update notes and interest if new info provided
+    const newNote = (document.getElementById('f-notes')||{}).value?.trim();
+    if(newNote) dup.notes = (dup.notes ? dup.notes+'\n' : '') + '[Merge '+new Date().toLocaleDateString()+': '+newNote+']';
+    dup.callCount = (dup.callCount||0)+1;
+    save();
+    setTimeout(()=>{ showToast('Lead merged with existing record under '+dupMgr); renderAddForm(); renderDashboard(); },1800);
+    return;
+  }
+
+  // ── ASSIGN TO MANAGER (round-robin OR manual) ──
+  let assignedManager = null;
+  let pendingAdmin = false;
+
+  if(leadAssignMode === 'roundrobin'){
+    assignedManager = getNextManager();
+  } else {
+    // manual mode — admin assigns later; lead goes into pending queue
+    pendingAdmin = true;
+    assignedManager = null;
+  }
+
+  const l={
+    id:'L'+Date.now(),name,phone,
+    phone2:(document.getElementById('f-phone2')||{}).value?.trim()||'',
+    source:document.getElementById('f-source').value,
+    interest:document.getElementById('f-interest').value,
+    status:document.getElementById('f-status').value,
+    generatedBy: currentRole==='executive' ? currentUser : 'Admin',
+    assigned: assignedManager || 'Unassigned',
+    assignedManager: assignedManager,
+    assignedRole:'manager',
+    transferredTo: assignedManager || '',
+    pendingAssign: pendingAdmin,
+    followup:document.getElementById('f-followup').value,
+    notes:(document.getElementById('f-notes')||{}).value?.trim()||'',
+    createdAt:new Date().toISOString(),
+    assignedAt: assignedManager ? new Date().toISOString() : '',
+    callCount:0
+  };
+  leads.unshift(l);save();
+  renderAddForm();
+  if(pendingAdmin){
+    showToast('✅ Lead saved! Waiting for Admin to assign.');
+  } else {
+    showToast('✅ Lead saved! → Assigned to '+assignedManager);
+  }
+  renderDashboard();
+}
+
+// ══════════════════════════════════════════
+//  PLOTS
+// ══════════════════════════════════════════
+function renderPlots(){
+  const canEdit = currentRole==='admin';
+  const chips=['All','Available','Booked','Hold'];
+  const filtered = plotFilter==='All'?plots:plots.filter(p=>p.status===plotFilter);
+  document.getElementById('page-plots').innerHTML=`
+    <div class="filter-row" id="plotFilterRow">
+      ${chips.map(c=>`<div class="filter-chip${c===plotFilter?' active':''}" onclick="setPlotFilter('${c}',this)">${c}</div>`).join('')}
+    </div>
+    ${canEdit?`<button class="btn-secondary" onclick="openAddPlot()" style="margin-bottom:14px;width:100%">+ Add New Plot</button>`:''}
+    <div class="plots-grid">
+      ${filtered.map(p=>`
+        <div class="plot-card" onclick="openPlot('${p.id}')">
+          <div class="plot-id">${p.id}</div>
+          <div class="plot-size">${p.size}</div>
+          <div class="plot-sector">${p.sector}</div>
+          <div class="plot-price">${p.price}</div>
+          <div style="margin-top:7px"><span class="status-dot ${p.status.toLowerCase()}"></span><span style="font-size:.7rem;color:var(--muted2)">${p.status}</span></div>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+function setPlotFilter(f,el){
+  plotFilter=f;
+  document.querySelectorAll('#plotFilterRow .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderPlots();
+}
+
+function openPlot(id){
+  const p=plots.find(x=>x.id===id);if(!p)return;
+  activePlotId=id;
+  document.getElementById('plot-modal-title').textContent='🏗️ '+p.id;
+  const statuses=['Available','Hold','Booked'];
+  document.getElementById('plot-modal-body').innerHTML=`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;margin-bottom:4px">${p.size}</div>
+      <div style="font-size:.8rem;color:var(--muted2);margin-bottom:4px">📍 ${p.sector}</div>
+      <div style="font-size:1rem;font-weight:700;color:var(--gold);margin-bottom:8px">${p.price}</div>
+      <div><span class="status-dot ${p.status.toLowerCase()}"></span><span style="font-size:.78rem">${p.status}</span></div>
+    </div>
+    ${currentRole==='admin'?`
+    <div class="form-group"><label class="form-label">Change Status</label>
+      <select class="form-select" id="plot-status-sel">${statuses.map(s=>`<option${s===p.status?' selected':''}>${s}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label class="form-label">Update Price</label>
+      <input class="form-input" id="plot-price-inp" value="${p.price}" placeholder="e.g. ₹20L">
+    </div>
+    <button class="btn-primary" onclick="savePlotEdit('${id}')">Save Changes</button>
+    <button class="btn-secondary" onclick="deletePlot('${id}')" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red)">Delete Plot</button>
+    `:`<p style="font-size:.8rem;color:var(--muted2)">Contact admin to change plot status.</p>`}
+  `;
+  document.getElementById('plotModal').classList.add('show');
+}
+
+function savePlotEdit(id){
+  const p=plots.find(x=>x.id===id);if(!p)return;
+  p.status=document.getElementById('plot-status-sel').value;
+  p.price=document.getElementById('plot-price-inp').value;
+  save();closeModal('plotModal');renderPlots();showToast('Plot updated!');
+}
+
+function deletePlot(id){
+  if(confirm('Delete this plot?')){plots=plots.filter(p=>p.id!==id);save();closeModal('plotModal');renderPlots();showToast('Plot deleted');}
+}
+
+function openAddPlot(){
+  document.getElementById('plot-modal-title').textContent='➕ Add New Plot';
+  document.getElementById('plot-modal-body').innerHTML=`
+    <div class="form-group"><label class="form-label">Plot ID</label><input class="form-input" id="np-id" placeholder="e.g. YD-E501"></div>
+    <div class="form-group"><label class="form-label">Sector</label><input class="form-input" id="np-sector" placeholder="e.g. Sector 30"></div>
+    <div class="form-group"><label class="form-label">Size</label><input class="form-input" id="np-size" placeholder="e.g. 200 sq yd"></div>
+    <div class="form-group"><label class="form-label">Price</label><input class="form-input" id="np-price" placeholder="e.g. ₹32L"></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select class="form-select" id="np-status"><option>Available</option><option>Booked</option><option>Hold</option></select>
+    </div>
+    <button class="btn-primary" onclick="saveNewPlot()">Add Plot</button>
+  `;
+  document.getElementById('plotModal').classList.add('show');
+}
+
+function saveNewPlot(){
+  const id=document.getElementById('np-id').value.trim();
+  if(!id){showToast('Plot ID required','error');return;}
+  plots.push({id,sector:document.getElementById('np-sector').value,size:document.getElementById('np-size').value,price:document.getElementById('np-price').value,status:document.getElementById('np-status').value});
+  save();closeModal('plotModal');renderPlots();showToast('Plot added!');
+}
+
+// ══════════════════════════════════════════
+//  MORE PAGE (Role-based)
+// ══════════════════════════════════════════
+function renderMore(){
+  if(currentRole==='admin') renderAdminPanel();
+  else if(currentRole==='manager') renderManagerPanel();
+  else renderExecutivePanel();
+}
+
+// ─── ADMIN PANEL ───
+function renderAdminPanel(){
+  const tabs=[
+    {id:'team',label:'👥 Team'},
+    {id:'users',label:'🔑 Users'},
+    {id:'upload',label:'📤 Bulk Upload'},
+    {id:'integrations',label:'🔗 Integrations'},
+    {id:'settings',label:'⚙️ Settings'},
+  ];
+  const content = adminTab==='team'?adminTeamHTML()
+    :adminTab==='users'?adminUsersHTML()
+    :adminTab==='upload'?adminUploadHTML()
+    :adminTab==='integrations'?adminIntHTML()
+    :adminSettingsHTML();
+
+  document.getElementById('page-more').innerHTML=`
+    <div class="section-title" style="margin-top:0">Admin Panel</div>
+    <div class="tab-row">
+      ${tabs.map(t=>`<button class="tab-btn${t.id===adminTab?' active':''}" onclick="switchAdminTab('${t.id}')">${t.label}</button>`).join('')}
+    </div>
+    <div id="admin-tab-content">${content}</div>
+  `;
+}
+
+function switchAdminTab(tab){adminTab=tab;renderAdminPanel();}
+
+function adminTeamHTML(){
+  // Build assignment record table
+  const assignLog = leads.map(l=>({
+    name:l.name, phone:l.phone, genBy:l.generatedBy||'—',
+    manager:l.assignedManager||l.assigned||'—',
+    status:l.status, date:(l.assignedAt||l.createdAt||'').slice(0,10)
+  }));
+
+  const tableRows = assignLog.map(r=>{
+    const statusColor = r.status==='Hot'?'var(--hot)':r.status==='Warm'?'var(--warm)':r.status==='Cold'?'var(--cold)':r.status==='Closed'?'var(--green)':'var(--purple)';
+    return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:.75rem">'
+      +'<div><div style="font-weight:600">'+r.name+'</div><div style="font-size:.65rem;color:var(--muted2);font-family:DM Mono,monospace">'+r.phone+'</div></div>'
+      +'<div style="color:var(--muted2)">'+r.genBy+'</div>'
+      +'<div style="color:var(--blue)">'+r.manager+'</div>'
+      +'<span style="font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:8px;background:'+statusColor+'18;color:'+statusColor+';border:1px solid '+statusColor+'33">'+r.status+'</span>'
+      +'</div>';
+  }).join('');
+
+  return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">Lead Assignment Record</div>'
+    +'<div style="font-size:.7rem;color:var(--muted2)">'+leads.length+' total</div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;padding:6px 0;border-bottom:2px solid var(--border2);margin-bottom:4px">'
+    +'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Customer</div>'
+    +'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Generated By</div>'
+    +'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Manager</div>'
+    +'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Status</div>'
+    +'</div>'
+    +(leads.length===0?'<div style="text-align:center;color:var(--muted);padding:20px 0;font-size:.82rem">No leads yet</div>':tableRows)
+    +'</div>'
+    + buildAdminReassignHTML()
+    + buildAdminTeamPerfHTML();
+}
+
+function buildAdminReassignHTML(){
+  const mgrOpts = USERS.manager.filter(u=>u.active).map(u=>'<option value="'+u.name+'">'+u.name+'</option>').join('');
+  const pending = leads.filter(l=>l.pendingAssign);
+  const isRR = leadAssignMode==='roundrobin';
+
+  // ── MODE TOGGLE ──
+  const modeToggle = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:12px">⚙️ Lead Assignment Mode</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+    +'<div onclick="setAssignMode(&#39;roundrobin&#39;)" style="border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;border:2px solid '+(isRR?'var(--gold)':'var(--border)')+';background:'+(isRR?'rgba(232,160,32,.08)':'var(--surface)')+';transition:all .2s">'
+    +'<div style="font-size:1.4rem;margin-bottom:4px">🔄</div>'
+    +'<div style="font-size:.8rem;font-weight:700;color:'+(isRR?'var(--gold)':'var(--muted2)')+'">Auto Round Robin</div>'
+    +'<div style="font-size:.62rem;color:var(--muted);margin-top:3px">Leads auto-distributed equally to all managers</div>'
+    +'</div>'
+    +'<div onclick="setAssignMode(&#39;manual&#39;)" style="border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;border:2px solid '+(!isRR?'var(--blue)':'var(--border)')+';background:'+(!isRR?'rgba(77,142,240,.08)':'var(--surface)')+';transition:all .2s">'
+    +'<div style="font-size:1.4rem;margin-bottom:4px">👑</div>'
+    +'<div style="font-size:.8rem;font-weight:700;color:'+(!isRR?'var(--blue)':'var(--muted2)')+'">Admin Assigns</div>'
+    +'<div style="font-size:.62rem;color:var(--muted);margin-top:3px">Admin manually assigns each lead to a manager</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="font-size:.72rem;padding:8px 12px;border-radius:8px;background:var(--surface);color:'+(isRR?'var(--gold)':'var(--blue)')+'">Currently: <b>'+(isRR?'🔄 Auto Round Robin — leads auto-assigned':'👑 Admin Assigns — leads wait in pending queue')+'</b></div>'
+    +'</div>';
+
+  // ── PENDING QUEUE (only in manual mode) ──
+  let pendingSection = '';
+  if(!isRR){
+    const pendingRows = pending.length===0
+      ? '<div style="text-align:center;color:var(--muted);padding:16px 0;font-size:.82rem">✅ No pending leads — all assigned</div>'
+      : pending.map(l=>'<div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">'
+          +'<div style="flex:1;min-width:0"><div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+l.name+'</div>'
+          +'<div style="font-size:.68rem;color:var(--muted2);font-family:DM Mono,monospace">'+l.phone+'</div>'
+          +'<div style="font-size:.65rem;color:var(--muted);margin-top:2px">By: '+l.generatedBy+' · '+l.source+'</div></div>'
+          +'<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
+          +'<select id="pq-mgr-'+l.id+'" style="background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:DM Sans,sans-serif;font-size:.75rem;padding:6px 8px">'+mgrOpts+'</select>'
+          +'<button class="action-btn primary" style="flex:0 0 52px;padding:7px 4px;font-size:.7rem" onclick="assignPendingLead(&#39;'+l.id+'&#39;)">Assign</button>'
+          +'</div>'
+          +'</div>').join('');
+
+    pendingSection = '<div style="background:var(--card);border:2px solid '+(pending.length>0?'var(--gold)':'var(--border)')+';border-radius:14px;padding:14px;margin-bottom:12px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+      +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;color:'+(pending.length>0?'var(--gold)':'var(--muted2)')+'">⏳ Pending Assignment</div>'
+      +'<span style="font-size:.65rem;font-weight:700;padding:3px 9px;border-radius:10px;background:'+(pending.length>0?'rgba(232,160,32,.15)':'rgba(34,201,138,.12)')+';color:'+(pending.length>0?'var(--gold)':'var(--green)')+';border:1px solid '+(pending.length>0?'rgba(232,160,32,.3)':'rgba(34,201,138,.3)')+'">'+pending.length+' leads</span>'
+      +'</div>'
+      + pendingRows
+      +'</div>';
+  }
+
+  // ── MANUAL REASSIGN (always shown) ──
+  const reassignSection = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:10px">🔄 Reassign Any Lead</div>'
+    +'<div class="form-group" style="margin-bottom:8px"><label class="form-label">Search Lead (name or phone)</label>'
+    +'<input class="form-input" id="reassign-search" placeholder="Type name or phone..." oninput="filterReassignLeads()" style="margin-bottom:0"></div>'
+    +'<div id="reassign-lead-list" style="max-height:160px;overflow-y:auto;margin-bottom:10px"></div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Assign to Manager</label>'
+    +'<select class="form-select" id="reassign-mgr">'+mgrOpts+'</select></div>'
+    +'<button class="btn-primary" onclick="doReassign()">✅ Reassign Lead</button>'
+    +'</div>';
+
+  return modeToggle + pendingSection + reassignSection;
+}
+
+function setAssignMode(mode){
+  leadAssignMode = mode;
+  saveAssignMode();
+  showToast(mode==='roundrobin' ? '🔄 Round Robin mode ON' : '👑 Admin Assign mode ON');
+  switchAdminTab('team');
+}
+
+function assignPendingLead(lid){
+  const l = leads.find(x=>x.id===lid);
+  const mgrEl = document.getElementById('pq-mgr-'+lid);
+  if(!l||!mgrEl){showToast('Error finding lead','error');return;}
+  const mgr = mgrEl.value;
+  l.assigned = mgr;
+  l.assignedManager = mgr;
+  l.transferredTo = mgr;
+  l.pendingAssign = false;
+  l.assignedAt = new Date().toISOString();
+  save();
+  showToast('✅ Lead assigned to '+mgr);
+  switchAdminTab('team');
+}
+
+
+
+function filterReassignLeads(){
+  const q = (document.getElementById('reassign-search')||{}).value?.toLowerCase()||'';
+  const box = document.getElementById('reassign-lead-list');
+  if(!box) return;
+  const filtered = leads.filter(l=>l.name.toLowerCase().includes(q)||l.phone.includes(q)).slice(0,6);
+  if(filtered.length===0){ box.innerHTML='<div style="font-size:.78rem;color:var(--muted);padding:8px 0">No leads found</div>'; return; }
+  box.innerHTML = filtered.map(l=>{
+    const lid = l.id;
+    return '<div onclick="selectReassignLead(&#34;'+lid+'&#34;)" id="rl-'+lid+'" style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:.8rem;border:1px solid var(--border);margin-bottom:5px;background:var(--surface)">'
+      +'<span style="font-weight:600">'+l.name+'</span> <span style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--muted2)">'+l.phone+'</span>'
+      +'<span style="float:right;font-size:.65rem;color:var(--blue)">&#8594; '+(l.assignedManager||l.assigned||'Unassigned')+'</span>'
+      +'</div>';
+  }).join('');
+}
+
+let selectedReassignId = null;
+function selectReassignLead(id){
+  selectedReassignId = id;
+  document.querySelectorAll('[id^="rl-"]').forEach(el=>{ el.classList.remove('sel-rl'); el.style.borderColor='var(--border)'; });
+  const el = document.getElementById('rl-'+id);
+  if(el){ el.classList.add('sel-rl'); el.style.borderColor='var(--gold)'; }
+}
+
+function doReassign(){
+  if(!selectedReassignId){ showToast('Select a lead first','error'); return; }
+  const l = leads.find(x=>x.id===selectedReassignId);
+  const mgr = (document.getElementById('reassign-mgr')||{}).value;
+  if(!l||!mgr){ showToast('Select a lead and manager','error'); return; }
+  const oldMgr = l.assignedManager||l.assigned;
+  l.assigned = mgr;
+  l.assignedManager = mgr;
+  l.transferredTo = mgr;
+  l.reassignedBy = 'Admin';
+  l.reassignedAt = new Date().toISOString();
+  save();
+  selectedReassignId = null;
+  showToast('✅ Lead reassigned from '+oldMgr+' → '+mgr);
+  switchAdminTab('team');
+}
+
+function buildAdminTeamPerfHTML(){
+  const allU = [...USERS.manager.map(u=>({...u,role:'manager',color:'var(--blue)',bg:'rgba(77,142,240,.18)'})),
+                ...USERS.executive.map(u=>({...u,role:'executive',color:'var(--green)',bg:'rgba(34,201,138,.18)'}))];
+  const maxL = Math.max(...allU.map(u=>leads.filter(l=>l.assigned===u.name||l.generatedBy===u.name).length),1);
+  return '<div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Team Performance</div>'
+    + allU.map(u=>{
+      const uLeads  = leads.filter(l=>u.role==='manager'?(l.assignedManager===u.name||l.assigned===u.name):l.generatedBy===u.name).length;
+      const uCalls  = callLogs.filter(c=>c.agent===u.name).length;
+      const uClosed = leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length;
+      const pct = Math.round((uLeads/maxL)*100);
+      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        +'<div style="width:36px;height:36px;border-radius:50%;background:'+u.bg+';color:'+u.color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif">'+u.name[0]+'</div>'
+        +'<div style="flex:1"><div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">'+u.name+'</div>'
+        +'<div style="font-size:.65rem;color:var(--muted2)">'+(u.role==='manager'?'Sales Manager':'Sales Executive')+'</div></div>'
+        +'<span style="font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:8px;'+(u.active?'background:rgba(34,201,138,.1);color:var(--green)':'background:rgba(240,92,92,.1);color:var(--red)')+'">'+(u.active?'Active':'Off')+'</span>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">'
+        +'<div style="text-align:center;background:var(--surface);border-radius:8px;padding:5px"><div style="font-size:.9rem;font-weight:700;color:'+u.color+'">'+uLeads+'</div><div style="font-size:.58rem;color:var(--muted)">'+(u.role==='manager'?'Assigned':'Generated')+'</div></div>'
+        +'<div style="text-align:center;background:var(--surface);border-radius:8px;padding:5px"><div style="font-size:.9rem;font-weight:700;color:var(--blue)">'+uCalls+'</div><div style="font-size:.58rem;color:var(--muted)">Calls</div></div>'
+        +'<div style="text-align:center;background:var(--surface);border-radius:8px;padding:5px"><div style="font-size:.9rem;font-weight:700;color:var(--green)">'+uClosed+'</div><div style="font-size:.58rem;color:var(--muted)">Closed</div></div>'
+        +'</div>'
+        +'<div style="width:100%;height:3px;background:var(--border);border-radius:2px"><div style="width:'+pct+'%;height:100%;border-radius:2px;background:'+u.color+'"></div></div>'
+        +'</div>';
+    }).join('');
+}
+
+// ── OLD adminTeamHTML body (now delegated above) ──
+
+
+function adminUsersHTML(){
+  const allRoles=['manager','executive'];
+  const allU=[
+    ...USERS.manager.map(u=>({...u,role:'manager'})),
+    ...USERS.executive.map(u=>({...u,role:'executive'})),
+  ];
+  const total=allU.length;
+  const active=allU.filter(u=>u.active).length;
+  const inactive=allU.filter(u=>!u.active).length;
+
+  return `
+    <div class="stats-grid" style="margin-bottom:14px">
+      <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value gold">${total}</div></div>
+      <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value green">${active}</div></div>
+    </div>
+    <button class="btn-primary" style="margin-bottom:16px" onclick="openAddUserModal()">➕ Add New User</button>
+
+    <div style="font-family:'Syne',sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Sales Managers</div>
+    ${USERS.manager.map(u=>userCardHTML(u,'manager')).join('')}
+
+    <div style="font-family:'Syne',sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px">Sales Executives</div>
+    ${USERS.executive.map(u=>userCardHTML(u,'executive')).join('')}
+  `;
+}
+
+function userCardHTML(u, role){
+  const uLeads=leads.filter(l=>l.assigned===u.name).length;
+  const uCalls=callLogs.filter(c=>c.agent===u.name).length;
+  const roleColor=role==='manager'?'var(--blue)':'var(--green)';
+  const roleLabel=role==='manager'?'Sales Manager':'Sales Executive';
+  return `
+  <div style="background:var(--card);border:1px solid ${u.active?'var(--border)':'var(--red)22'};border-radius:14px;padding:14px;margin-bottom:10px;${u.active?'':'opacity:.65'}">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="width:42px;height:42px;border-radius:50%;background:${roleColor}22;color:${roleColor};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;font-family:'Syne',sans-serif;flex-shrink:0">${u.name[0]}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.9rem;font-weight:700;font-family:'Syne',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name}</div>
+        <div style="font-size:.68rem;color:var(--muted2);margin-top:1px">${roleLabel}</div>
+        ${u.phone?`<div style="font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace">${u.phone}</div>`:''}
+      </div>
+      <span style="font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:10px;${u.active?'background:rgba(34,201,138,.12);color:var(--green);border:1px solid rgba(34,201,138,.25)':'background:rgba(240,92,92,.12);color:var(--red);border:1px solid rgba(240,92,92,.25)'}">${u.active?'Active':'Inactive'}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+      <div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px">
+        <div style="font-size:.95rem;font-weight:700;color:${roleColor}">${uLeads}</div>
+        <div style="font-size:.6rem;color:var(--muted)">Leads</div>
+      </div>
+      <div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px">
+        <div style="font-size:.95rem;font-weight:700;color:var(--blue)">${uCalls}</div>
+        <div style="font-size:.6rem;color:var(--muted)">Calls</div>
+      </div>
+      <div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px">
+        <div style="font-size:.95rem;font-weight:700;color:var(--green)">${leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length}</div>
+        <div style="font-size:.6rem;color:var(--muted)">Closed</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:7px">
+      <button class="action-btn primary" style="flex:2" onclick="openEditUserModal('${u.id}','${role}')">✏️ Edit</button>
+      <button class="action-btn" onclick="resetUserPass('${u.id}','${role}')">🔑 Reset Pass</button>
+      <button class="action-btn" style="${u.active?'color:var(--red);border-color:rgba(240,92,92,.3)':'color:var(--green);border-color:rgba(34,201,138,.3)'}" onclick="toggleUserActive('${u.id}','${role}')">${u.active?'🚫 Deactivate':'✅ Activate'}</button>
+    </div>
+  </div>`;
+}
+
+function openAddUserModal(){
+  document.getElementById('plot-modal-title').textContent='➕ Add New User';
+  document.getElementById('plot-modal-body').innerHTML=`
+    <div class="form-group"><label class="form-label">Full Name *</label><input class="form-input" id="nu-name" placeholder="e.g. Vikram Nair" type="text"></div>
+    <div class="form-group"><label class="form-label">Role *</label>
+      <select class="form-select" id="nu-role">
+        <option value="manager">Sales Manager</option>
+        <option value="executive">Sales Executive</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="nu-phone" placeholder="98XXXXXXXX" type="tel"></div>
+    <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="nu-email" placeholder="name@company.com" type="email"></div>
+    <div class="form-group"><label class="form-label">Password *</label>
+      <div style="position:relative">
+        <input class="form-input" id="nu-pass" placeholder="Set a password" type="password" style="padding-right:44px">
+        <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">👁️</button>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Confirm Password *</label>
+      <div style="position:relative">
+        <input class="form-input" id="nu-pass2" placeholder="Confirm password" type="password" style="padding-right:44px">
+        <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">👁️</button>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="saveNewUser()">✅ Create User</button>
+  `;
+  document.getElementById('plotModal').classList.add('show');
+}
+
+function saveNewUser(){
+  const name=document.getElementById('nu-name').value.trim();
+  const role=document.getElementById('nu-role').value;
+  const phone=document.getElementById('nu-phone').value.trim();
+  const email=document.getElementById('nu-email').value.trim();
+  const pass=document.getElementById('nu-pass').value;
+  const pass2=document.getElementById('nu-pass2').value;
+  if(!name){showToast('Name is required','error');return;}
+  if(!pass){showToast('Password is required','error');return;}
+  if(pass!==pass2){showToast('Passwords do not match','error');return;}
+  const allNames=[...USERS.manager,...USERS.executive,...USERS.admin].map(u=>u.name.toLowerCase());
+  if(allNames.includes(name.toLowerCase())){showToast('User already exists','error');return;}
+  const newUser={id:'u_'+Date.now(),name,pass,phone,email,active:true,createdAt:new Date().toISOString().slice(0,10)};
+  USERS[role].push(newUser);
+  saveUsers();closeModal('plotModal');switchAdminTab('users');
+  showToast('✅ User '+name+' created!');
+}
+
+function openEditUserModal(uid, role){
+  const u=USERS[role].find(x=>x.id===uid);if(!u)return;
+  document.getElementById('plot-modal-title').textContent='✏️ Edit User';
+  document.getElementById('plot-modal-body').innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;background:var(--card);border-radius:12px;padding:12px">
+      <div style="width:40px;height:40px;border-radius:50%;background:${role==='manager'?'rgba(77,142,240,.2)':'rgba(34,201,138,.2)'};color:${role==='manager'?'var(--blue)':'var(--green)'};display:flex;align-items:center;justify-content:center;font-weight:800;font-family:'Syne',sans-serif">${u.name[0]}</div>
+      <div><div style="font-weight:700;font-family:'Syne',sans-serif">${u.name}</div><div style="font-size:.72rem;color:var(--muted2)">${role==='manager'?'Sales Manager':'Sales Executive'}</div></div>
+    </div>
+    <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="eu-name" value="${u.name}" type="text"></div>
+    <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="eu-phone" value="${u.phone||''}" type="tel"></div>
+    <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="eu-email" value="${u.email||''}" type="email"></div>
+    <div class="form-group"><label class="form-label">Change Role</label>
+      <select class="form-select" id="eu-role">
+        <option value="manager"${role==='manager'?' selected':''}>Sales Manager</option>
+        <option value="executive"${role==='executive'?' selected':''}>Sales Executive</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="saveEditUser('${uid}','${role}')">💾 Save Changes</button>
+    <button class="btn-secondary" onclick="deleteUser('${uid}','${role}')" style="width:100%;margin-top:10px;color:var(--red);border-color:rgba(240,92,92,.4)">🗑️ Delete User</button>
+  `;
+  document.getElementById('plotModal').classList.add('show');
+}
+
+function saveEditUser(uid, oldRole){
+  const u=USERS[oldRole].find(x=>x.id===uid);if(!u)return;
+  const newName=document.getElementById('eu-name').value.trim();
+  const newRole=document.getElementById('eu-role').value;
+  const oldName=u.name;
+  u.name=newName||u.name;
+  u.phone=document.getElementById('eu-phone').value.trim();
+  u.email=document.getElementById('eu-email').value.trim();
+  // handle role change
+  if(newRole!==oldRole){
+    USERS[oldRole]=USERS[oldRole].filter(x=>x.id!==uid);
+    USERS[newRole].push(u);
+  }
+  // update all leads assigned to old name
+  if(newName && newName!==oldName){
+    leads.forEach(l=>{if(l.assigned===oldName)l.assigned=newName;if(l.transferredTo===oldName)l.transferredTo=newName;});
+    callLogs.forEach(c=>{if(c.agent===oldName)c.agent=newName;});
+    save();
+  }
+  saveUsers();closeModal('plotModal');switchAdminTab('users');
+  showToast('✅ User updated!');
+}
+
+function resetUserPass(uid, role){
+  const u=USERS[role].find(x=>x.id===uid);if(!u)return;
+  document.getElementById('plot-modal-title').textContent='🔑 Reset Password — '+u.name;
+  document.getElementById('plot-modal-body').innerHTML=`
+    <p style="font-size:.8rem;color:var(--muted2);margin-bottom:16px">Set a new password for <b style="color:var(--text)">${u.name}</b></p>
+    <div class="form-group"><label class="form-label">Current Password</label>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 14px;font-family:'DM Mono',monospace;font-size:.85rem;color:var(--gold)">${u.pass}</div>
+    </div>
+    <div class="form-group"><label class="form-label">New Password *</label>
+      <div style="position:relative">
+        <input class="form-input" id="rp-new" placeholder="Enter new password" type="password" style="padding-right:44px">
+        <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">👁️</button>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Confirm New Password *</label>
+      <div style="position:relative">
+        <input class="form-input" id="rp-confirm" placeholder="Confirm new password" type="password" style="padding-right:44px">
+        <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁️':'🙈'" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">👁️</button>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="saveResetPass('${uid}','${role}')">🔑 Save New Password</button>
+  `;
+  document.getElementById('plotModal').classList.add('show');
+}
+
+function saveResetPass(uid, role){
+  const u=USERS[role].find(x=>x.id===uid);if(!u)return;
+  const np=document.getElementById('rp-new').value;
+  const cp=document.getElementById('rp-confirm').value;
+  if(!np){showToast('Password cannot be empty','error');return;}
+  if(np.length<4){showToast('Minimum 4 characters','error');return;}
+  if(np!==cp){showToast('Passwords do not match','error');return;}
+  u.pass=np;saveUsers();closeModal('plotModal');
+  showToast('✅ Password updated for '+u.name);
+}
+
+function toggleUserActive(uid, role){
+  const u=USERS[role].find(x=>x.id===uid);if(!u)return;
+  u.active=!u.active;saveUsers();switchAdminTab('users');
+  showToast(u.active?'✅ '+u.name+' activated':'🚫 '+u.name+' deactivated');
+}
+
+function deleteUser(uid, role){
+  const u=USERS[role].find(x=>x.id===uid);if(!u)return;
+  if(!confirm(`Delete user ${u.name}? This cannot be undone.`))return;
+  USERS[role]=USERS[role].filter(x=>x.id!==uid);
+  saveUsers();closeModal('plotModal');switchAdminTab('users');
+  showToast('User deleted');
+}
+
+function adminUploadHTML(){
+  return `
+    <div style="margin-bottom:12px;font-size:.8rem;color:var(--muted2)">Upload a CSV or Excel file with columns: <b>Name, Phone, Source, Interest, Notes</b></div>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">Tap to Upload CSV / Excel</div>
+      <div class="upload-sub">Drag & drop or click to browse</div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(this)">
+    <div id="uploadPreview"></div>
+    <button class="btn-secondary" onclick="downloadTemplate()" style="width:100%;margin-bottom:10px">⬇️ Download Sample CSV Template</button>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px">
+      <div style="font-size:.78rem;font-weight:600;margin-bottom:6px">📊 Upload Stats</div>
+      <div style="font-size:.75rem;color:var(--muted2)">Total leads in system: <b style="color:var(--text)">${leads.length}</b></div>
+      <div style="font-size:.75rem;color:var(--muted2);margin-top:4px">Last upload: <b style="color:var(--text)">${localStorage.getItem('ycrm_lastupload')||'Never'}</b></div>
+    </div>
+  `;
+}
+
+function adminIntHTML(){
+  const cards=[
+    {key:'sheets',icon:'📊',bg:'#0f9d58',name:'Google Sheets Sync',desc:'Sync leads data live to your Google Sheet',connectLabel:'Connect Sheet'},
+    {key:'email',icon:'📧',bg:'#4285f4',name:'Email Notifications',desc:'Get email alerts on new leads & follow-ups',connectLabel:'Setup Email'},
+    {key:'acres99',icon:'🏠',bg:'#e04a2f',name:'99acres Integration',desc:'Auto-import inquiries from 99acres listings',connectLabel:'Connect 99acres'},
+  ];
+  return cards.map(c=>`
+    <div class="integration-card">
+      <div class="int-icon" style="background:${c.bg}22">${c.icon}</div>
+      <div class="int-info">
+        <div class="int-name">${c.name}</div>
+        <div class="int-desc">${c.desc}</div>
+        ${integrations[c.key]?'<div style="font-size:.65rem;color:var(--green);margin-top:3px">● Connected</div>':''}
+      </div>
+      ${integrations[c.key]
+        ?`<button class="int-toggle on" onclick="toggleInt('${c.key}')"></button>`
+        :`<button class="connect-btn" onclick="connectInt('${c.key}','${c.connectLabel}')">${c.connectLabel}</button>`
+      }
+    </div>`).join('');
+}
+
+function adminSettingsHTML(){
+  const allUsers = [
+    ...USERS.manager.map(u=>({...u,role:'manager',roleLabel:'Sales Manager',color:'var(--blue)'})),
+    ...USERS.executive.map(u=>({...u,role:'executive',roleLabel:'Sales Executive',color:'var(--green)'})),
+  ];
+
+  // ── OFFICE LOCATION CARD ──
+  const locCard = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:4px">🏢 Office Location (Geofence)</div>'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:12px">Staff are marked "In Office" when within this radius</div>'
+    +(officeLocation
+      ? '<div style="background:var(--surface);border:1px solid var(--green);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.8rem">'
+        +'<div style="font-weight:700;color:var(--green);margin-bottom:2px">✅ Office Set: '+(officeLocation.name||'Office')+'</div>'
+        +'<div style="color:var(--muted2);font-family:DM Mono,monospace;font-size:.72rem">'+officeLocation.lat.toFixed(5)+', '+officeLocation.lng.toFixed(5)+' · Radius: '+officeLocation.radius+'m</div>'
+        +'</div>'
+      : '<div style="background:rgba(240,92,92,.08);border:1px solid rgba(240,92,92,.2);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.78rem;color:var(--muted2)">⚠️ No office location set yet</div>')
+    +'<div class="form-group" style="margin-bottom:8px"><label class="form-label">Office Name</label>'
+    +'<input class="form-input" id="off-name" value="'+(officeLocation?officeLocation.name||'':'')+ '" placeholder="e.g. YEIDA Head Office" style="margin-bottom:0"></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+    +'<div class="form-group" style="margin-bottom:0"><label class="form-label">Latitude</label>'
+    +'<input class="form-input" id="off-lat" value="'+(officeLocation?officeLocation.lat:'')+'" placeholder="28.XXXXX" type="number" step="any" style="margin-bottom:0"></div>'
+    +'<div class="form-group" style="margin-bottom:0"><label class="form-label">Longitude</label>'
+    +'<input class="form-input" id="off-lng" value="'+(officeLocation?officeLocation.lng:'')+'" placeholder="77.XXXXX" type="number" step="any" style="margin-bottom:0"></div>'
+    +'</div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Radius (meters) — e.g. 200</label>'
+    +'<input class="form-input" id="off-radius" value="'+(officeLocation?officeLocation.radius:200)+'" type="number" style="margin-bottom:0"></div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button class="btn-primary" style="flex:2" onclick="saveOfficeLocation()">💾 Save Location</button>'
+    +'<button class="btn-secondary" onclick="detectMyLocation()" style="flex:1">📍 Use My GPS</button>'
+    +'</div>'
+    +(officeLocation?'<button onclick="clearOfficeLocation()" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(240,92,92,.3);border-radius:8px;color:var(--red);padding:8px;font-size:.78rem;cursor:pointer">🗑️ Clear Office Location</button>':'')
+    +'</div>';
+
+  // ── TEAM LOCATION STATUS ──
+  const allU = [...USERS.manager,...USERS.executive].filter(u=>u.active);
+  const locRows = allU.map(u=>{
+    const loc = locationLogs[u.id];
+    const lastSeen = loc ? new Date(loc.lastSeen).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const inOff = loc ? loc.inOffice : undefined;
+    const isManager = !!USERS.manager.find(x=>x.id===u.id);
+    const roleLabel = isManager ? 'Manager' : 'Executive';
+    const roleColor = isManager ? 'var(--blue)' : 'var(--green)';
+    const roleBg = isManager ? 'rgba(77,142,240,.18)' : 'rgba(34,201,138,.18)';
+
+    let badge, mapLink = '';
+    if(!loc){
+      badge = '<span style="font-size:.65rem;color:var(--muted);font-style:italic">Not sharing yet</span>';
+    } else if(inOff===null||inOff===undefined){
+      badge = '<span style="font-size:.65rem;color:var(--muted2)">📍 Locating...</span>';
+    } else if(inOff){
+      badge = '<span style="font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:8px;background:rgba(34,201,138,.12);color:var(--green);border:1px solid rgba(34,201,138,.25)">🏢 In Office</span>';
+    } else {
+      badge = '<span style="font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:8px;background:rgba(232,160,32,.12);color:var(--gold);border:1px solid rgba(232,160,32,.25)">🚗 Outside</span>';
+      if(loc.lat && loc.lng){
+        mapLink = '<a href="https://maps.google.com/?q='+loc.lat+','+loc.lng+'" target="_blank" style="font-size:.6rem;color:var(--blue);text-decoration:none;margin-left:4px">📌 View Map</a>';
+      }
+    }
+
+    const distTxt = (loc && loc.lat && officeLocation)
+      ? ' · ' + Math.round(distanceMeters(loc.lat,loc.lng,officeLocation.lat,officeLocation.lng)) + 'm away'
+      : '';
+
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:10px">'
+      +'<div style="width:34px;height:34px;border-radius:50%;background:'+roleBg+';color:'+roleColor+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:.85rem;flex-shrink:0">'+u.name[0]+'</div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
+      +'<div style="font-size:.6rem;color:var(--muted)">'+roleLabel+' · Last update: '+lastSeen+distTxt+'</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">'+badge+mapLink+'</div>'
+      +'</div>'
+      +'</div>';
+  }).join('') || '<div style="font-size:.78rem;color:var(--muted);text-align:center;padding:12px">No team members</div>';
+
+  const inOfficeCount = allU.filter(u=>{ const l=locationLogs[u.id]; return l&&l.inOffice===true; }).length;
+  const outsideCount  = allU.filter(u=>{ const l=locationLogs[u.id]; return l&&l.inOffice===false; }).length;
+  const notSharingCount = allU.filter(u=>!locationLogs[u.id]).length;
+
+  const locationPanel = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">📡 Team Live Location</div>'
+    +'<button onclick="switchAdminTab(&quot;settings&quot;)" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:.7rem;color:var(--muted2);cursor:pointer">&#x21BB; Refresh</button>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">'
+    +'<div style="text-align:center;background:rgba(34,201,138,.08);border:1px solid rgba(34,201,138,.2);border-radius:8px;padding:8px">'
+    +'<div style="font-size:1.1rem;font-weight:800;color:var(--green)">'+inOfficeCount+'</div>'
+    +'<div style="font-size:.6rem;color:var(--muted)">🏢 In Office</div></div>'
+    +'<div style="text-align:center;background:rgba(232,160,32,.08);border:1px solid rgba(232,160,32,.2);border-radius:8px;padding:8px">'
+    +'<div style="font-size:1.1rem;font-weight:800;color:var(--gold)">'+outsideCount+'</div>'
+    +'<div style="font-size:.6rem;color:var(--muted)">🚗 Outside</div></div>'
+    +'<div style="text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px">'
+    +'<div style="font-size:1.1rem;font-weight:800;color:var(--muted2)">'+notSharingCount+'</div>'
+    +'<div style="font-size:.6rem;color:var(--muted)">❓ No GPS</div></div>'
+    +'</div>'
+    +(officeLocation?'<div style="font-size:.68rem;color:var(--muted2);margin-bottom:10px;padding:6px 10px;background:var(--surface);border-radius:8px">🏢 Office: '+(officeLocation.name||'Office')+' · Radius: '+officeLocation.radius+'m</div>':'<div style="font-size:.68rem;color:var(--red);margin-bottom:10px;padding:6px 10px;background:rgba(240,92,92,.06);border-radius:8px">⚠️ No office location set — go to Settings to configure</div>')
+    + locRows
+    +'</div>';
+
+  // ── FOLLOW-UP STAGES MANAGER ──
+  const stagesCard = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:4px">📋 Customer Follow-up Stages</div>'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:12px">These appear on every lead card. Drag to reorder (future), tap ✕ to delete.</div>'
+    +'<div id="stages-list">'+followupStages.map((s,i)=>'<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">'
+      +'<span>'+s.icon+'</span>'
+      +'<span style="flex:1;font-size:.82rem;font-weight:600">'+s.label+'</span>'
+      +'<button onclick="deleteStage(&quot;'+s.id+'&quot;)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.9rem;padding:0">&#x2715;</button>'
+      +'</div>').join('')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:10px">'
+    +'<input class="form-input" id="new-stage-icon" placeholder="Icon e.g. 🏡" style="flex:0 0 60px;margin-bottom:0;text-align:center">'
+    +'<input class="form-input" id="new-stage-label" placeholder="Stage name..." style="flex:1;margin-bottom:0">'
+    +'<button class="action-btn primary" onclick="addStage()" style="flex:0 0 54px">Add</button>'
+    +'</div>'
+    +'</div>';
+
+  // ── ADMIN OWN PASSWORD ──
+  const adminUser = USERS.admin[0];
+  const passCard = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+    +'<div style="width:38px;height:38px;border-radius:50%;background:rgba(232,160,32,.2);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif">A</div>'
+    +'<div><div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">Admin (Owner)</div>'
+    +'<div style="font-size:.68rem;color:var(--muted2)">Your own password</div></div>'
+    +'<span style="margin-left:auto;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:10px;background:rgba(232,160,32,.12);color:var(--gold);border:1px solid rgba(232,160,32,.25)">Admin</span>'
+    +'</div>'
+    +'<div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">'
+    +'<div><div style="font-size:.65rem;color:var(--muted);margin-bottom:2px">Current Password</div>'
+    +'<div id="admin-pass-display" style="font-family:DM Mono,monospace;font-size:.85rem;color:var(--gold);letter-spacing:2px">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div></div>'
+    +'<button type="button" onclick="toggleAdminPassView()" id="adminPassEye" style="background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">&#x1F441;&#xFE0F;</button>'
+    +'</div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">New Password</label>'
+    +'<div style="position:relative"><input class="form-input" id="admin-new-pass" type="password" placeholder="Enter new password" style="padding-right:44px;margin-bottom:0">'
+    +'<button type="button" onclick="toggleFieldVis(&quot;admin-new-pass&quot;,this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">&#x1F441;&#xFE0F;</button></div></div>'
+    +'<div class="form-group" style="margin-bottom:12px"><label class="form-label">Confirm New Password</label>'
+    +'<div style="position:relative"><input class="form-input" id="admin-confirm-pass" type="password" placeholder="Confirm new password" style="padding-right:44px;margin-bottom:0">'
+    +'<button type="button" onclick="toggleFieldVis(&quot;admin-confirm-pass&quot;,this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)">&#x1F441;&#xFE0F;</button></div></div>'
+    +'<button class="btn-primary" onclick="saveAdminPass()">&#x1F511; Update My Password</button>'
+    +'</div>';
+
+  // ── TEAM PASSWORDS ──
+  const teamPassCards = '<div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Team Passwords</div>'
+    + allUsers.map(u=>{
+      const c = u.color.includes('blue') ? 'rgba(77,142,240,.2)' : 'rgba(34,201,138,.2)';
+      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+        +'<div style="width:36px;height:36px;border-radius:50%;background:'+c+';color:'+u.color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:.9rem;flex-shrink:0">'+u.name[0]+'</div>'
+        +'<div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
+        +'<div style="font-size:.68rem;color:var(--muted2)">'+u.roleLabel+'</div></div>'
+        +'<span style="font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:10px;'+(u.active?'background:rgba(34,201,138,.12);color:var(--green);border:1px solid rgba(34,201,138,.25)':'background:rgba(240,92,92,.12);color:var(--red);border:1px solid rgba(240,92,92,.25)')+'">'+(u.active?'Active':'Inactive')+'</span>'
+        +'</div>'
+        +'<div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">'
+        +'<div><div style="font-size:.65rem;color:var(--muted);margin-bottom:2px">Current Password</div>'
+        +'<div id="pass-display-'+u.id+'" style="font-family:DM Mono,monospace;font-size:.85rem;color:var(--gold);letter-spacing:2px">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>'
+        +'<div id="pass-actual-'+u.id+'" style="display:none">'+u.pass+'</div></div>'
+        +'<button type="button" onclick="toggleUserPassView(\''+u.id+'\')" style="background:none;border:none;cursor:pointer;font-size:1rem;color:var(--muted2)" id="eye-'+u.id+'">&#x1F441;&#xFE0F;</button>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px"><div style="flex:1;position:relative">'
+        +'<input class="form-input" id="newpass-'+u.id+'" type="password" placeholder="New password" style="padding-right:40px;margin-bottom:0">'
+        +'<button type="button" data-fid="newpass-" data-uid="'+u.id+'" onclick="toggleFieldVis(this.dataset.fid+this.dataset.uid,this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:.9rem;color:var(--muted2)">&#x1F441;&#xFE0F;</button></div>'
+        +'<button class="action-btn primary" style="flex:0 0 80px;height:auto" data-uid="'+u.id+'" data-role="'+u.role+'" onclick="saveUserPassFromSettings(this.dataset.uid,this.dataset.role)">Save</button>'
+        +'</div></div>';
+    }).join('');
+
+  // ── EXPORT & DANGER ──
+  const exportDanger = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:4px;margin-bottom:12px">'
+    +'<div style="font-size:.85rem;font-weight:600;font-family:Syne,sans-serif;margin-bottom:10px">Export All Data</div>'
+    +'<button class="btn-secondary" style="width:100%" onclick="exportCSV()">&#x2B07;&#xFE0F; Export Leads as CSV</button>'
+    +'</div>'
+    +'<div style="background:rgba(240,92,92,.08);border:1px solid rgba(240,92,92,.2);border-radius:14px;padding:16px">'
+    +'<div style="font-size:.85rem;font-weight:600;color:var(--red);margin-bottom:6px">&#x26A0;&#xFE0F; Danger Zone</div>'
+    +'<button class="btn-secondary" style="width:100%;color:var(--red);border-color:var(--red)" onclick="clearAllData()">&#x1F5D1;&#xFE0F; Clear All Leads</button>'
+    +'</div>';
+
+  return locCard + locationPanel + stagesCard + passCard + teamPassCards + exportDanger;
+}
+
+function saveOfficeLocation(){
+  const name=(document.getElementById('off-name')||{}).value?.trim()||'Office';
+  const lat=parseFloat(document.getElementById('off-lat')?.value);
+  const lng=parseFloat(document.getElementById('off-lng')?.value);
+  const radius=parseInt(document.getElementById('off-radius')?.value)||200;
+  if(isNaN(lat)||isNaN(lng)){showToast('Enter valid lat/lng coordinates','error');return;}
+  officeLocation={lat,lng,radius,name};
+  saveOfficeLoc();showToast('✅ Office location saved!');switchAdminTab('settings');
+}
+
+function detectMyLocation(){
+  if(!navigator.geolocation){showToast('GPS not available','error');return;}
+  showToast('📍 Getting your location...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude.toFixed(6);
+    const lng=pos.coords.longitude.toFixed(6);
+    const latEl=document.getElementById('off-lat');
+    const lngEl=document.getElementById('off-lng');
+    if(latEl) latEl.value=lat;
+    if(lngEl) lngEl.value=lng;
+    showToast('📍 GPS coordinates filled!');
+  },()=>showToast('Could not get location','error'),{enableHighAccuracy:true});
+}
+
+function clearOfficeLocation(){
+  if(!confirm('Clear office location?'))return;
+  officeLocation=null;localStorage.removeItem('ycrm_office_loc');
+  showToast('Office location cleared');switchAdminTab('settings');
+}
+
+function addStage(){
+  const icon=(document.getElementById('new-stage-icon')||{}).value?.trim()||'📌';
+  const label=(document.getElementById('new-stage-label')||{}).value?.trim();
+  if(!label){showToast('Enter a stage name','error');return;}
+  followupStages.push({id:'s'+Date.now(),label,icon});
+  saveStages();switchAdminTab('settings');showToast('✅ Stage added: '+label);
+}
+
+function deleteStage(sid){
+  if(followupStages.length<=1){showToast('Need at least 1 stage','error');return;}
+  followupStages=followupStages.filter(s=>s.id!==sid);
+  saveStages();switchAdminTab('settings');showToast('Stage removed');
+}
+
+
+
+function toggleFieldVis(id, btn){
+  const inp = document.getElementById(id);
+  if(!inp) return;
+  inp.type = inp.type==='password' ? 'text' : 'password';
+  btn.textContent = inp.type==='password' ? '\u{1F441}\uFE0F' : '\u{1F648}';
+}
+
+function toggleAdminPassView(){
+  const display = document.getElementById('admin-pass-display');
+  const eye = document.getElementById('adminPassEye');
+  const adminPass = USERS.admin[0].pass;
+  if(display.dataset.visible !== '1'){
+    display.textContent = adminPass;
+    display.dataset.visible = '1';
+    eye.textContent = '\u{1F648}';
+  } else {
+    display.textContent = '\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}';
+    display.dataset.visible = '0';
+    eye.textContent = '\u{1F441}\uFE0F';
+  }
+}
+
+function toggleUserPassView(uid){
+  const dots = document.getElementById('pass-display-'+uid);
+  const actual = document.getElementById('pass-actual-'+uid);
+  const eye = document.getElementById('eye-'+uid);
+  if(!dots||!actual) return;
+  if(dots.dataset.visible !== '1'){
+    dots.textContent = actual.textContent;
+    dots.dataset.visible = '1';
+    eye.textContent = '\u{1F648}';
+  } else {
+    dots.textContent = '\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}';
+    dots.dataset.visible = '0';
+    eye.textContent = '\u{1F441}\uFE0F';
+  }
+}
+
+function saveAdminPass(){
+  const np = (document.getElementById('admin-new-pass')||{}).value?.trim();
+  const cp = (document.getElementById('admin-confirm-pass')||{}).value?.trim();
+  if(!np){ showToast('Password cannot be empty','error'); return; }
+  if(np.length < 4){ showToast('Minimum 4 characters','error'); return; }
+  if(np !== cp){ showToast('Passwords do not match','error'); return; }
+  USERS.admin[0].pass = np;
+  saveUsers();
+  document.getElementById('admin-new-pass').value = '';
+  document.getElementById('admin-confirm-pass').value = '';
+  showToast('\u2705 Admin password updated!');
+}
+
+function saveUserPassFromSettings(uid, role){
+  const u = USERS[role].find(x=>x.id===uid);
+  if(!u) return;
+  const inp = document.getElementById('newpass-'+uid);
+  const np = inp ? inp.value.trim() : '';
+  if(!np){ showToast('Password cannot be empty','error'); return; }
+  if(np.length < 4){ showToast('Min 4 characters','error'); return; }
+  u.pass = np;
+  saveUsers();
+  if(inp) inp.value = '';
+  const actual = document.getElementById('pass-actual-'+uid);
+  if(actual) actual.textContent = np;
+  const dots = document.getElementById('pass-display-'+uid);
+  if(dots && dots.dataset.visible==='1') dots.textContent = np;
+  showToast('\u2705 Password updated for '+u.name);
+}
+
+
+// ─── MANAGER PANEL ───
+function renderManagerPanel(){
+  const myL=leads.filter(l=>l.assigned===currentUser||l.transferredTo===currentUser);
+  const hot=myL.filter(l=>l.status==='Hot').length;
+  const closed=myL.filter(l=>l.status==='Closed').length;
+  const pending=myL.filter(l=>l.status==='transferred').length;
+
+  document.getElementById('page-more').innerHTML=`
+    <div class="section-title" style="margin-top:0">My Pipeline</div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">My Leads</div><div class="stat-value gold">${myL.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Pending Review</div><div class="stat-value blue">${pending}</div></div>
+      <div class="stat-card"><div class="stat-label">Hot</div><div class="stat-value red">${hot}</div></div>
+      <div class="stat-card"><div class="stat-label">Closed</div><div class="stat-value green">${closed}</div></div>
+    </div>
+    <div class="section-title">Transferred to Me</div>
+    ${leads.filter(l=>l.transferredTo===currentUser).length===0
+      ?'<div class="empty"><div class="empty-icon">📭</div>No transferred leads yet</div>'
+      :leads.filter(l=>l.transferredTo===currentUser).map(l=>`
+        <div class="transfer-card" onclick="openLead('${l.id}')">
+          <div class="transfer-label">From Executive · ${l.assignedRole}</div>
+          <div class="transfer-name">${l.name}</div>
+          <div class="transfer-detail">📞 ${l.phone} · ${l.interest} · <span class="badge ${l.status.toLowerCase()}">${l.status}</span></div>
+        </div>`).join('')
+    }
+  `;
+}
+
+// ─── EXECUTIVE PANEL ───
+function renderExecutivePanel(){
+  const myL=leads.filter(l=>l.assigned===currentUser&&l.assignedRole==='executive');
+  document.getElementById('page-more').innerHTML=`
+    <div class="section-title" style="margin-top:0">Transfer to Manager</div>
+    <p style="font-size:.8rem;color:var(--muted2);margin-bottom:14px">When a lead is very interested and ready to close, transfer them to your Sales Manager.</p>
+    ${myL.filter(l=>l.status!=='transferred'&&l.status!=='Closed').length===0
+      ?'<div class="empty"><div class="empty-icon">📭</div>No leads to transfer</div>'
+      :myL.filter(l=>l.status!=='transferred'&&l.status!=='Closed').map(l=>`
+        <div class="lead-card">
+          <div class="lead-top"><div><div class="lead-name">${l.name}</div><div class="lead-phone">${l.phone}</div></div><span class="badge ${l.status.toLowerCase()}">${l.status}</span></div>
+          <div class="action-row">
+            <button class="action-btn green" onclick="openTransferModal('${l.id}')">🔄 Transfer to Manager</button>
+          </div>
+        </div>`).join('')
+    }
+    <div class="section-title">Already Transferred</div>
+    ${myL.filter(l=>l.status==='transferred').length===0
+      ?'<div class="empty" style="padding:16px 0"><div class="empty-icon">✅</div>None yet</div>'
+      :myL.filter(l=>l.status==='transferred').map(l=>`
+        <div class="transfer-card">
+          <div class="transfer-label">Transferred to ${l.transferredTo}</div>
+          <div class="transfer-name">${l.name}</div>
+          <div class="transfer-detail">${l.phone} · ${l.interest}</div>
+        </div>`).join('')
+    }
+  `;
+}
+
+// ══════════════════════════════════════════
+//  LEAD MODAL
+// ══════════════════════════════════════════
+function openLead(id){
+  const l=leads.find(x=>x.id===id);if(!l)return;
+  activeLeadId=id;
+  document.getElementById('modal-leadname').textContent='👤 '+l.name;
+  const logs=callLogs.filter(c=>c.leadId===id);
+  const canClose=currentRole==='admin'||currentRole==='manager';
+  const canDelete=currentRole==='admin';
+  const isReadOnly = currentRole==='executive' && l.assignedManager;
+  const statusOpts=['Hot','Warm','Cold','Closed'].map(s=>'<option value="'+s+'"'+(s===l.status?' selected':'')+'>'+s+'</option>').join('');
+
+  // Hide executive name from manager — show only for admin
+  const assignedByLine = currentRole==='admin'
+    ? '<div style="font-size:.8rem;color:var(--muted2)">👤 Generated by: '+(l.generatedBy||'—')+' → Manager: '+(l.assignedManager||l.assigned||'—')+'</div>'
+    : currentRole==='manager'
+    ? '<div style="font-size:.8rem;color:var(--muted2)">📋 Source: '+l.source+'</div>'
+    : '<div style="font-size:.8rem;color:var(--muted2)">👤 Assigned to: '+(l.assignedManager||'Pending')+'</div>';
+
+  // Follow-up stages
+  const stageChips = followupStages.map(s=>{
+    const active = (l.followupStage||'')===s.id;
+    return '<div data-lid="'+l.id+'" data-sid="'+s.id+'" onclick="setLeadStage(this.dataset.lid,this.dataset.sid)" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:20px;font-size:.7rem;font-weight:600;cursor:pointer;margin:3px;border:1px solid '+(active?'var(--gold)':'var(--border)')+';background:'+(active?'rgba(232,160,32,.15)':'var(--card)')+';color:'+(active?'var(--gold)':'var(--muted2)')+'">'+s.icon+' '+s.label+'</div>';
+  }).join('');
+
+  // Notes history
+  const notesHistory = (l.notesLog||[]).slice().reverse().map(n=>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:.78rem"><span style="color:var(--muted);font-size:.65rem">'+n.date+' · '+n.by+'</span><br>'+n.text+'</div>'
+  ).join('');
+
+  document.getElementById('modal-body').innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
+    +'<div class="stat-card"><div class="stat-label">Status</div><div style="margin-top:4px"><span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span></div></div>'
+    +'<div class="stat-card"><div class="stat-label">Calls Logged</div><div class="stat-value blue">'+logs.length+'</div></div>'
+    +'</div>'
+    // Contact info
+    +'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:6px;font-weight:600">Contact Info</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    +'<a href="tel:'+l.phone+'" style="color:var(--blue);font-size:.9rem;font-family:DM Mono,monospace">📞 '+l.phone+'</a>'
+    +'<a href="tel:'+l.phone+'" style="color:var(--blue);font-size:.9rem;font-family:DM Mono,monospace">&#x1F4DE; '+l.phone+'</a>'
+    +'<button data-ph="'+l.phone+'" onclick="startAutoDial([this.dataset.ph])" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:.68rem;font-weight:700;cursor:pointer">&#x25B6; Auto Dial</button>'
+    +'</div>'
+    +'</div>'
+    +(l.phone2?'<div style="margin-bottom:4px"><a href="tel:'+l.phone2+'" style="color:var(--blue);font-size:.88rem;font-family:DM Mono,monospace">📞 '+l.phone2+'</a></div>':'')
+    +'<div style="font-size:.8rem;color:var(--muted2);margin-top:4px">📍 '+l.interest+' · 🧭 '+l.source+'</div>'
+    + assignedByLine
+    +(l.followup?'<div style="font-size:.8rem;color:var(--muted2);margin-top:2px">📅 Follow-up: '+l.followup+'</div>':'')
+    +'</div>'
+    // Follow-up stages
+    +'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:8px;font-weight:600">Customer Follow-up Stage</div>'
+    +'<div>'+stageChips+'</div>'
+    +'</div>'
+    // Notes & history
+    +'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:8px;font-weight:600">Notes</div>'
+    +(l.notes?'<div style="font-size:.82rem;color:var(--muted2);margin-bottom:8px;padding:8px;background:var(--surface);border-radius:8px">'+l.notes+'</div>':'')
+    +(notesHistory?'<div style="max-height:120px;overflow-y:auto;margin-bottom:8px">'+notesHistory+'</div>':'')
+    +(!isReadOnly?'<div style="display:flex;gap:6px"><input id="newNoteInput" class="form-input" placeholder="Add a note..." style="margin-bottom:0;flex:1"><button class="action-btn primary" data-nlid="'+l.id+'" onclick="addLeadNote(this.dataset.nlid)" style="flex:0 0 60px">Add</button></div>':'')
+    +'</div>'
+    // Actions
+    +(!isReadOnly?'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<button class="action-btn primary" style="flex:2;min-width:100px" data-cid="'+id+'" onclick="openCallModal(this.dataset.cid);document.getElementById(&quot;leadModal&quot;).classList.remove(&quot;show&quot;)">&#x1F4CB; Log Call</button>'
+    +(canClose?'<select data-sid="'+id+'" onchange="updateStatus(this.dataset.sid,this.value)" style="flex:1;min-width:100px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:DM Sans,sans-serif;font-size:.8rem;padding:8px"><option value="">Change Status</option>'+statusOpts+'</select>':'')
+    +(canDelete?'<button class="action-btn" style="color:var(--red);border-color:var(--red)" data-did="'+id+'" onclick="deleteLead(this.dataset.did);closeModal(&quot;leadModal&quot;)">&#x1F5D1;&#xFE0F;</button>':'')
+    +'</div>':'<div style="font-size:.75rem;color:var(--muted2);text-align:center;padding:10px;background:var(--card);border-radius:10px;margin-bottom:14px">👁️ Read-only view — this lead is managed by '+( l.assignedManager||'manager')+'</div>')
+    // Call history
+    +'<div class="section-title" style="margin-top:0">📞 Call History</div>'
+    +(logs.length===0?'<div class="empty" style="padding:16px 0">No call logs yet</div>'
+    :logs.slice().reverse().map(c=>'<div class="call-log-entry"><div class="call-log-top"><div class="call-log-name">'+c.agent+'</div><div class="call-log-time">'+c.date+' '+c.time+'</div></div><div class="call-log-note">'+(c.notes||'—')+'</div><div style="display:flex;align-items:center;gap:6px;margin-top:7px"><span class="outcome-pill '+c.outcome+'">'+outcomeLabel(c.outcome)+'</span>'+(c.followup?'<span style="font-size:.65rem;color:var(--muted)">Next: '+c.followup+'</span>':'')+'</div></div>').join(''));
+
+  document.getElementById('leadModal').classList.add('show');
+}
+
+function setLeadStage(lid, stageId){
+  const l = leads.find(x=>x.id===lid); if(!l) return;
+  l.followupStage = l.followupStage===stageId ? '' : stageId;
+  save(); openLead(lid);
+  const s = followupStages.find(x=>x.id===stageId);
+  showToast(s ? s.icon+' Stage: '+s.label : 'Stage cleared');
+}
+
+function addLeadNote(lid){
+  const l = leads.find(x=>x.id===lid); if(!l) return;
+  const inp = document.getElementById('newNoteInput');
+  const text = inp ? inp.value.trim() : '';
+  if(!text){ showToast('Note is empty','error'); return; }
+  if(!l.notesLog) l.notesLog = [];
+  l.notesLog.push({ text, by: currentUser, date: new Date().toLocaleDateString('en-IN') });
+  if(!l.notes) l.notes = text;
+  save(); openLead(lid); showToast('📝 Note added');
+}
+
+// ── AUTO DIAL ──
+let autoDialQueue = [];
+let dialNumber = '';
+let autoDialIdx = 0;
+
+function startAutoDial(phones){
+  autoDialQueue = phones.filter(Boolean);
+  autoDialIdx = 0;
+  showAutoDialUI();
+}
+
+function startBulkAutoDial(){
+  const myL = myLeads().filter(l=>l.status!=='Closed'&&l.phone);
+  if(myL.length===0){ showToast('No leads to dial','error'); return; }
+  autoDialQueue = myL.map(l=>({phone:l.phone, name:l.name, id:l.id}));
+  autoDialIdx = 0;
+  showAutoDialUI();
+}
+
+function showAutoDialUI(){
+  if(autoDialIdx >= autoDialQueue.length){
+    showToast('✅ All leads dialled!'); closeModal('autoDialModal'); return;
+  }
+  const item = autoDialQueue[autoDialIdx];
+  const phone = typeof item==='string' ? item : item.phone;
+  const name  = typeof item==='string' ? phone : item.name;
+  const total = autoDialQueue.length;
+  const modal = document.getElementById('autoDialModal');
+  const body  = document.getElementById('autoDialBody');
+  body.innerHTML =
+    '<div style="text-align:center;padding:10px 0">'
+    +'<div style="font-size:2rem;margin-bottom:8px">📞</div>'
+    +'<div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px">'+name+'</div>'
+    +'<div style="font-family:DM Mono,monospace;font-size:1.1rem;color:var(--gold);margin-bottom:12px">'+phone+'</div>'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:16px">Lead '+(autoDialIdx+1)+' of '+total+'</div>'
+    +'<a href="tel:'+phone+'" onclick="setTimeout(advanceAutoDial,1500)" style="display:block;background:var(--green);color:#fff;border-radius:14px;padding:14px;font-weight:700;font-family:Syne,sans-serif;font-size:1rem;text-decoration:none;margin-bottom:10px">📞 Call Now</a>'
+    +'<button class="btn-secondary" onclick="advanceAutoDial()" style="width:100%;margin-bottom:8px">⏭ Skip</button>'
+    +'<button class="btn-secondary" onclick="document.getElementById(&quot;autoDialModal&quot;).classList.remove(&quot;show&quot;)" style="width:100%;color:var(--red);border-color:var(--red)">&#x2716; Stop Dialling</button>'
+    +'</div>';
+  modal.classList.add('show');
+}
+
+function advanceAutoDial(){
+  autoDialIdx++;
+  showAutoDialUI();
+}
+
+
+function outcomeLabel(o){
+  return {
+    interested:'🔥 Interested', callback:'🔄 Call Back',
+    not_interested:'❌ Not Interested', not_picked:'📵 Not Picked',
+    switched_off:'🔇 Switched Off', no_network:'📶 No Network',
+    // legacy values
+    'not-interested':'❌ Not Interested'
+  }[o] || o;
+}
+
+
+function updateStatus(id,status){
+  if(!status)return;
+  const l=leads.find(x=>x.id===id);
+  if(l){l.status=status;save();renderLeads&&renderLeads();renderDashboard();showToast('Status updated!');}
+}
+
+function deleteLead(id){
+  if(confirm('Delete this lead?')){leads=leads.filter(l=>l.id!==id);save();renderLeads();renderDashboard();showToast('Lead deleted');}
+}
+
+// ══════════════════════════════════════════
+//  CALL LOG
+// ══════════════════════════════════════════
+function selectOutcome(el){
+  // Deselect all
+  document.querySelectorAll('.outcome-chip').forEach(c=>{
+    c.className='outcome-chip';
+  });
+  // Select clicked
+  const val = el.dataset.val;
+  el.classList.add('sel-'+val);
+  document.getElementById('call-outcome').value = val;
+  // Auto set follow-up date for callback/interested
+  if((val==='callback'||val==='interested') && !document.getElementById('call-followup').value){
+    const d=new Date(); d.setDate(d.getDate()+1);
+    document.getElementById('call-followup').value=d.toISOString().slice(0,10);
+  }
+}
+
+function openCallModal(id){
+  activeLeadId = id;
+  const lead = leads.find(l=>l.id===id);
+  // Reset chips
+  document.querySelectorAll('.outcome-chip').forEach(c=>c.className='outcome-chip');
+  document.getElementById('call-outcome').value='';
+  document.getElementById('call-notes').value='';
+  document.getElementById('call-followup').value='';
+  // Fill customer info
+  if(lead){
+    document.getElementById('callModalName').textContent = lead.name;
+    const p1btn = document.getElementById('callModalPhone1Btn');
+    const p2btn = document.getElementById('callModalPhone2Btn');
+    document.getElementById('callModalPhone1').textContent = lead.phone||'—';
+    p1btn.href = lead.phone ? 'tel:'+lead.phone : '#';
+    if(lead.phone2){
+      document.getElementById('callModalPhone2').textContent = lead.phone2;
+      p2btn.href = 'tel:'+lead.phone2;
+      p2btn.style.display='flex';
+    } else {
+      p2btn.style.display='none';
+    }
+  }
+  document.getElementById('callModal').classList.add('show');
+}
+
+function saveCall(){
+  const outcome = document.getElementById('call-outcome').value;
+  if(!outcome){ showToast('⚠️ Select a call outcome','error'); return; }
+  const now = new Date();
+  const log = {
+    id:'C'+Date.now(), leadId:activeLeadId, agent:currentUser,
+    outcome, statusChanged:null,
+    followup:document.getElementById('call-followup').value,
+    notes:document.getElementById('call-notes').value.trim(),
+    date:now.toISOString().slice(0,10),
+    time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})
+  };
+  // Auto-update lead status based on outcome
+  const lead = leads.find(l=>l.id===activeLeadId);
+  if(lead){
+    lead.callCount = (lead.callCount||0)+1;
+    if(log.followup) lead.followup = log.followup;
+    if(outcome==='interested'){ log.statusChanged=lead.status; lead.status='Hot'; }
+    else if(outcome==='callback'){ log.statusChanged=lead.status; lead.status='Warm'; }
+    else if(outcome==='not_interested'){ log.statusChanged=lead.status; lead.status='Cold'; }
+  }
+  callLogs.push(log);
+  save();
+  saveCallToCloud(log);
+  closeModal('callModal');
+  showToast('📋 Call logged'+(lead&&log.statusChanged?' · Status → '+lead.status:'')+'!');
+  renderDashboard();
+  if(document.getElementById('leads-list')) renderLeadsList();
+}
+
+// ══════════════════════════════════════════
+//  TRANSFER
+// ══════════════════════════════════════════
+function openTransferModal(id){
+  activeLeadId=id;
+  const sel=document.getElementById('transfer-manager');
+  sel.innerHTML=USERS.manager.filter(u=>u.active).map(u=>`<option>${u.name}</option>`).join('');
+  document.getElementById('transferModal').classList.add('show');
+}
+
+function doTransfer(){
+  const mgr=document.getElementById('transfer-manager').value;
+  const note=document.getElementById('transfer-note').value;
+  const l=leads.find(x=>x.id===activeLeadId);
+  if(l){
+    l.status='transferred';l.transferredTo=mgr;
+    if(note) l.notes=(l.notes?l.notes+'\n':'')+`[Transfer note: ${note}]`;
+    save();
+  }
+  closeModal('transferModal');
+  showToast('🔄 Lead transferred to '+mgr+'!');
+  renderDashboard();
+  renderMore();
+}
+
+// ══════════════════════════════════════════
+//  BULK UPLOAD
+// ══════════════════════════════════════════
+function handleDrop(e){
+  e.preventDefault();document.getElementById('uploadZone').classList.remove('drag');
+  const file=e.dataTransfer.files[0];if(file)processFile(file);
+}
+
+function handleFileUpload(input){
+  const file=input.files[0];if(file)processFile(file);
+}
+
+function processFile(file){
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const text=e.target.result;
+    const lines=text.split('\n').filter(l=>l.trim());
+    if(lines.length<2){showToast('File is empty or invalid','error');return;}
+    const rows=lines.slice(1).map(line=>{
+      const cols=line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+      return {name:cols[0]||'',phone:cols[1]||'',source:cols[2]||'Purchased Data',interest:cols[3]||'Not decided',notes:cols[4]||''};
+    }).filter(r=>r.name&&r.phone);
+
+    const preview=document.getElementById('uploadPreview');
+    if(rows.length===0){showToast('No valid rows found','error');return;}
+    preview.innerHTML=`
+      <div style="font-size:.78rem;font-weight:600;margin-bottom:8px;color:var(--green)">✅ ${rows.length} leads ready to import</div>
+      ${rows.slice(0,5).map(r=>`
+        <div class="preview-row">
+          <div class="preview-name">${r.name}</div>
+          <div class="preview-phone">${r.phone}</div>
+        </div>`).join('')}
+      ${rows.length>5?`<div style="font-size:.7rem;color:var(--muted);padding:6px 0">...and ${rows.length-5} more</div>`:''}
+      <button class="btn-primary" style="margin-top:10px" onclick="importLeads(${JSON.stringify(rows).split('"').join("'")})">⬆️ Import All ${rows.length} Leads</button>
+    `;
+  };
+  reader.readAsText(file);
+}
+
+function importLeads(rows){
+  // rows passed as encoded JSON
+  const src=typeof rows==='string'?JSON.parse(rows.replace(/'/g,'"')):rows;
+  const exec=USERS.executive[0].name;
+  src.forEach(r=>{
+    leads.push({
+      id:'L'+Date.now()+Math.random().toString(36).slice(2,6),
+      name:r.name,phone:r.phone,phone2:'',
+      source:r.source||'Purchased Data',interest:r.interest||'Not decided',
+      status:'Cold',assigned:exec,assignedRole:'executive',transferredTo:'',
+      followup:'',notes:r.notes||'',createdAt:new Date().toISOString(),callCount:0
+    });
+  });
+  localStorage.setItem('ycrm_lastupload',new Date().toLocaleDateString('en-IN'));
+  save();showToast(`✅ ${src.length} leads imported!`);renderAdminPanel();renderDashboard();
+}
+
+function downloadTemplate(){
+  const csv='Name,Phone,Source,Interest,Notes\nRamesh Kumar,9876543210,Purchased Data,200 sq yd,Interested in YEIDA plots\nMeena Devi,9812345678,Reference,100 sq yd,Budget around 18 lakhs';
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='skd_crm_template.csv';a.click();
+  showToast('Template downloaded!');
+}
+
+// ══════════════════════════════════════════
+//  INTEGRATIONS
+// ══════════════════════════════════════════
+function connectInt(key,label){
+  const info={
+    sheets:`To connect Google Sheets:\n1. Create a Google Sheet\n2. Share it with edit access\n3. Paste the Sheet URL below\n\n(In the full version, this will auto-sync all leads)`,
+    email:`To enable email notifications:\n1. Enter your email address\n2. You'll get alerts for new leads and follow-ups\n\n(In the full version, emails are sent via Gmail API)`,
+    acres99:`To connect 99acres:\n1. Log into your 99acres account\n2. Go to Settings > API Integration\n3. Paste your API key here\n\n(Inquiries will auto-import as Cold leads)`
+  };
+  alert(info[key]+'\n\n[Demo: Integration marked as connected]');
+  integrations[key]=true;save();renderAdminPanel();showToast(label+' connected!');
+}
+
+function toggleInt(key){
+  integrations[key]=!integrations[key];save();renderAdminPanel();
+  showToast(integrations[key]?'Integration enabled':'Integration disabled');
+}
+
+// ══════════════════════════════════════════
+//  EXPORT
+// ══════════════════════════════════════════
+function exportCSV(){
+  const header='Name,Phone,Source,Interest,Status,Assigned,Follow-up,Notes\n';
+  const rows=leads.map(l=>`"${l.name}","${l.phone}","${l.source}","${l.interest}","${l.status}","${l.assigned}","${l.followup}","${(l.notes||'').replace(/"/g,"'")}"`).join('\n');
+  const blob=new Blob([header+rows],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='skd_leads_export.csv';a.click();
+  showToast('CSV exported!');
+}
+
+function clearAllData(){
+  if(confirm('This will delete ALL leads. Are you sure?')){
+    leads=[];save();renderDashboard();showToast('All leads cleared');
+  }
+}
+
+// ══════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════
+function closeModal(id){document.getElementById(id).classList.remove('show');}
+
+function showToast(msg,type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast'+(type?' '+type:'');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+// ══ INIT ══
+populateLoginDropdown();
+document.querySelectorAll('.modal-overlay').forEach(o=>{
+  o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show');});
+});
+</script>
+
+<!-- Service Worker & PWA Install -->
+<script>
+// Register service worker
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('/sw.js')
+      .then(r=>console.log('✅ SW ready'))
+      .catch(e=>console.log('SW:',e));
+  });
+}
+
+// Detect if already running as installed app
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+// Capture Chrome's install prompt if it fires
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  console.log('✅ Install prompt ready');
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  document.getElementById('pwaInstallBar')?.remove();
+  showToast('🎉 SKD CRM installed on your home screen!');
+});
+
+// Show install bar at bottom — always visible unless already standalone
+function initInstallBar() {
+  if (isStandalone) return; // already installed, don't show
+  if (document.getElementById('pwaInstallBar')) return;
+
+  const bar = document.createElement('div');
+  bar.id = 'pwaInstallBar';
+  bar.style.cssText = `
+    position:fixed;bottom:0;left:0;right:0;z-index:99999;
+    background:#1a1714;color:#fff;
+    display:flex;align-items:center;gap:10px;
+    padding:10px 14px;box-shadow:0 -2px 12px rgba(0,0,0,.2);
+  `;
+  bar.innerHTML = `
+    <img src="/icon-512.png" style="width:36px;height:36px;border-radius:8px;flex-shrink:0;object-fit:cover">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:.82rem;font-family:'Plus Jakarta Sans',sans-serif">Install SKD CRM</div>
+      <div style="font-size:.7rem;opacity:.65;margin-top:1px">Add to home screen for fast access</div>
+    </div>
+    <button onclick="doInstall()" style="background:#c8822a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:.8rem;cursor:pointer;white-space:nowrap;flex-shrink:0">Install ↓</button>
+    <button onclick="document.getElementById('pwaInstallBar').remove()" style="background:transparent;color:#fff;border:none;font-size:1.2rem;cursor:pointer;padding:4px 6px;opacity:.5;flex-shrink:0">✕</button>
+  `;
+  document.body.appendChild(bar);
+}
+
+async function doInstall() {
+  if (deferredPrompt) {
+    // Chrome Android — native prompt
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    if (outcome === 'accepted') {
+      document.getElementById('pwaInstallBar')?.remove();
+    }
+  } else {
+    // iOS Safari or Chrome after prompt was dismissed — show manual guide
+    showInstallGuide();
+  }
+}
+
+function showInstallGuide() {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
+  const overlay = document.createElement('div');
+  overlay.id = 'installGuide';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999999;display:flex;align-items:flex-end';
+  
+  const steps = isIOS ? `
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">1</div>
+        <div style="font-size:.88rem;color:#444">Open this page in <b>Safari</b> (not Chrome)</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">2</div>
+        <div style="font-size:.88rem;color:#444">Tap the <b>Share</b> button <span style="font-size:1.1rem">⎙</span> at the bottom</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">3</div>
+        <div style="font-size:.88rem;color:#444">Scroll down and tap <b>"Add to Home Screen"</b></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">4</div>
+        <div style="font-size:.88rem;color:#444">Tap <b>"Add"</b> in the top right corner</div>
+      </div>
+    </div>
+  ` : `
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">1</div>
+        <div style="font-size:.88rem;color:#444">Tap the <b>3-dot menu ⋮</b> in Chrome top-right</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">2</div>
+        <div style="font-size:.88rem;color:#444">Tap <b>"Add to Home screen"</b> or <b>"Install app"</b></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;background:#c8822a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">3</div>
+        <div style="font-size:.88rem;color:#444">Tap <b>"Add"</b> to confirm</div>
+      </div>
+    </div>
+  `;
+
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px 20px;width:100%;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <img src="/icon-512.png" style="width:48px;height:48px;border-radius:12px;object-fit:cover">
+        <div>
+          <div style="font-weight:800;font-size:1rem;color:#1a1714;font-family:'Plus Jakarta Sans',sans-serif">Install SKD CRM</div>
+          <div style="font-size:.75rem;color:#9c9080;margin-top:2px">${isIOS ? 'iOS / iPhone / iPad' : 'Android / Chrome'}</div>
+        </div>
+      </div>
+      ${steps}
+      <button onclick="document.getElementById('installGuide').remove()" style="background:#c8822a;color:#fff;border:none;border-radius:12px;padding:14px;font-weight:700;font-size:.95rem;cursor:pointer;width:100%">Got it ✓</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+// Show install bar after 1 second
+setTimeout(initInstallBar, 1000);
+</script>
+
+<script>
+// ══ RESTORED FUNCTIONS ══
+
+function callToRow(c){
+  return {
+    id: c.id, lead_id: c.leadId, agent: c.agent,
+    outcome: c.outcome, status_changed: c.statusChanged||null,
+    followup: c.followup||'', notes: c.notes||'',
+    date: c.date||'', time: c.time||''
+  };
+}
+
+function dialPadCall(){
+  if(dialNumber.length === 0){
+    showToast('Please enter a number', 'error');
+    return;
+  }
+  
+  // Initiate call using tel: protocol
+  window.location.href = 'tel:' + dialNumber;
+  
+  // Log the call
+  showToast('Calling ' + dialNumber + '...');
+  
+  // Optional: Save to call history
+  const callLog = {
+    id: 'C' + Date.now(),
+    phone: dialNumber,
+    type: 'manual',
+    timestamp: new Date().toISOString(),
+    user: currentUser,
+    role: currentRole
+  };
+  
+  // You can save this to localStorage if needed
+  let manualCalls = JSON.parse(localStorage.getItem('ycrm_manual_calls')||'[]');
+  manualCalls.unshift(callLog);
+  if(manualCalls.length > 50) manualCalls = manualCalls.slice(0, 50);
+  localStorage.setItem('ycrm_manual_calls', JSON.stringify(manualCalls));
+  
+  // Close modal after a short delay
+  setTimeout(() => {
+    closeModal('dialPadModal');
+    dialNumber = '';
+  }, 500);
+}
+
+function dialPadDelete(){
+  dialNumber = dialNumber.slice(0, -1);
+  updateDialDisplay();
+}
+
+function dialPadInput(digit){
+  if(dialNumber.length < 15){
+    dialNumber += digit;
+    updateDialDisplay();
+  }
+}
+
+async function factoryReset(){
+  if(confirm('⚠️ FULL RESET — Deletes ALL data from cloud database. Continue?')){
+    try{
+      showToast('🔄 Clearing cloud data...');
+      await db.from('call_logs').delete().neq('id','__none__');
+      await db.from('leads').delete().neq('id','__none__');
+      await db.from('app_users').delete().neq('id','__none__');
+      leads=[]; callLogs=[];
+      USERS={admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2025-01-01'}],manager:[],executive:[]};
+      await pushUsers();
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('ycrm_'));
+      keys.forEach(k=>localStorage.removeItem(k));
+      showToast('✅ Full reset done — reloading...');
+      setTimeout(()=>location.reload(),1200);
+    }catch(e){ showToast('Reset error: '+e.message,'error'); }
+  }
+}
+
+function getGreeting(){
+  const h=new Date().getHours();
+  if(h<12) return 'Good morning';
+  if(h<17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function leadToRow(l){
+  return {
+    id: l.id, name: l.name, phone: l.phone, phone2: l.phone2||'',
+    city: l.city||'', source: l.source||'Cold Calling Data',
+    interest: l.interest||'', status: l.status||'Cold',
+    generated_by: l.generatedBy||'Admin',
+    assigned: l.assigned||'', assigned_role: l.assignedRole||'executive',
+    assigned_manager: l.assignedManager||null,
+    transferred_to: l.transferredTo||'',
+    followup: l.followup||'', notes: l.notes||'',
+    notes_log: l.notesLog||[], followup_stage: l.followupStage||'',
+    call_count: l.callCount||0
+  };
+}
+
+async function loadFromFirebase(){
+  // Uses same app_users table as syncFromCloud — single consistent DB schema
+  initSupabase();
+  if(!supabaseReady){
+    leads    = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
+    callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
+   await syncFromCloud();
+  populateLoginDropdown();
+}
+  const ls = document.getElementById('loadingScreen');
+  if(ls) ls.style.display='flex';
+  try{
+    await syncFromCloud();
+  } catch(e){
+    console.error('Load error:',e);
+    showToast('⚠️ Offline — using local data','error');
+  }
+  if(ls) ls.style.display='none';
+  populateLoginDropdown();
+}
+
+function openDialPad(){
+  dialNumber = '';
+  updateDialDisplay();
+  document.getElementById('dialPadModal').classList.add('show');
+}
+
+function outcomeColor(o){
+  if(o==='lead')          return 'var(--green)';
+  if(o==='callback')      return 'var(--gold)';
+  if(o==='not-interested')return 'var(--red)';
+  if(o==='switched-off')  return 'var(--red)';
+  if(o==='no-network')    return 'var(--purple)';
+  return 'var(--muted2)';
+}
+
+function rowToCall(r){
+  return {
+    id: r.id, leadId: r.lead_id, agent: r.agent,
+    outcome: r.outcome, statusChanged: r.status_changed||null,
+    followup: r.followup||'', notes: r.notes||'',
+    date: r.date||'', time: r.time||''
+  };
+}
+
+function rowToLead(r){
+  return {
+    id: r.id, name: r.name, phone: r.phone, phone2: r.phone2||'',
+    city: r.city||'', source: r.source||'Cold Calling Data',
+    interest: r.interest||'', status: r.status||'Cold',
+    generatedBy: r.generated_by||'Admin',
+    assigned: r.assigned||'', assignedRole: r.assigned_role||'executive',
+    assignedManager: r.assigned_manager||null,
+    transferredTo: r.transferred_to||'',
+    followup: r.followup||'', notes: r.notes||'',
+    notesLog: r.notes_log||[], followupStage: r.followup_stage||'',
+    callCount: r.call_count||0, createdAt: r.created_at||new Date().toISOString()
+  };
+}
+
+function rowToUser(r){ return {id:r.id,name:r.name,pass:r.pass,phone:r.phone||'',email:r.email||'',active:r.active,createdAt:r.created_at||''}; }
+
+async function saveCallLog(c){
+  try{ await supa.from('call_logs').upsert(callToRow(c)); }
+  catch(e){ console.error('saveCallLog error:',e); }
+}
+
+async function saveLead(l){
+  try{ await supa.from('leads').upsert(leadToRow(l)); }
+  catch(e){ console.error('saveLead error:',e); }
+}
+
+function updateDialDisplay(){
+  const display = document.getElementById('dialDisplay');
+  if(dialNumber.length === 0){
+    display.textContent = 'Enter Number';
+    display.classList.add('empty');
+  } else {
+    display.textContent = dialNumber;
+    display.classList.remove('empty');
+  }
+}
+
+function saveCallToCloud(log){ if(supa) saveCallLog(log); }
+</script>
+</body>
+</html>
