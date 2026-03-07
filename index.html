@@ -569,34 +569,42 @@ async function dbSet(table, key, value){
 // Load all data from Supabase, merge with localStorage
 async function syncFromCloud(){
   if(!supabaseReady) return;
-  showSyncBanner('☁️ Syncing data...');
+  showSyncBanner('☁️ Syncing...');
   try {
-    // Load leads
+    // ── LEADS: only overwrite local if cloud has data ──
     const cloudLeads = await dbGet('leads');
     if(cloudLeads && cloudLeads.length > 0){
-      leads = cloudLeads.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-      localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+      const parsed = cloudLeads.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
+      // Safety: never replace local leads with fewer cloud leads (avoid data loss on sync hiccup)
+      if(parsed.length >= leads.length){
+        leads = parsed;
+        localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+      }
     }
-    // Load call logs
+    // ── CALL LOGS ──
     const cloudCalls = await dbGet('call_logs');
     if(cloudCalls && cloudCalls.length > 0){
-      callLogs = cloudCalls.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+      const parsed = cloudCalls.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
+      if(parsed.length >= callLogs.length){
+        callLogs = parsed;
+        localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+      }
     }
-    // Load users
-   const cloudUsers = await dbGet('app_users');
-
-if (cloudUsers && cloudUsers.length > 0) {
-  const usersRow = cloudUsers.find(r => r.id === 'users');
-
-  if (usersRow && usersRow.data) {
-    USERS = typeof usersRow.data === "string"
-      ? JSON.parse(usersRow.data)
-      : usersRow.data;
-
-    localStorage.setItem('ycrm_users', JSON.stringify(USERS));
-  }
-}
+    // ── USERS: only overwrite if cloud has valid users ──
+    const cloudUsers = await dbGet('app_users');
+    if(cloudUsers && cloudUsers.length > 0){
+      const usersRow = cloudUsers.find(r => r.id === 'users');
+      if(usersRow && usersRow.data){
+        const parsed = typeof usersRow.data==='string' ? JSON.parse(usersRow.data) : usersRow.data;
+        // Safety: never wipe users if cloud returns empty/broken data
+        const cloudTotal = (parsed.admin||[]).length + (parsed.manager||[]).length + (parsed.executive||[]).length;
+        const localTotal  = (USERS.admin||[]).length  + (USERS.manager||[]).length  + (USERS.executive||[]).length;
+        if(parsed && parsed.admin && cloudTotal >= localTotal){
+          USERS = parsed;
+          localStorage.setItem('ycrm_users', JSON.stringify(USERS));
+        }
+      }
+    }
     showSyncBanner('✅ Synced!', true);
     renderDashboard();
   } catch(e){
@@ -618,7 +626,8 @@ function showSyncBanner(msg, fadeOut=false){
 // Push a single lead to cloud
 async function pushLead(lead){
   if(!supabaseReady) return;
-  await dbUpsert('leads', {id: lead.id, data: JSON.stringify(lead)});
+  lead.updatedAt = new Date().toISOString(); // timestamp every save
+  await dbUpsert('leads', {id: lead.id, data: JSON.stringify(lead), updated_at: new Date().toISOString()});
 }
 
 // Push all call logs to cloud (push latest only)
@@ -2782,7 +2791,11 @@ function dialPadInput(digit){
 }
 
 async function factoryReset(){
-  if(confirm('⚠️ FULL RESET — Deletes ALL data from cloud database. Continue?')){
+  const first = confirm('⚠️ FULL RESET\n\nThis will permanently delete ALL leads, call logs, and users from the cloud database.\n\nAre you sure?');
+  if(!first) return;
+  const second = confirm('🔴 FINAL WARNING\n\nThere is NO undo. Type OK to confirm.');
+  if(!second) return;
+  if(true){
     try{
       showToast('🔄 Clearing cloud data...');
       await db.from('call_logs').delete().neq('id','__none__');
