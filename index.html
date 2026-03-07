@@ -956,7 +956,9 @@ async function doLogin(){
   } else {
     if(pass !== userObj.pass){ showToast('Wrong password! ❌','error'); return; }
   }
-  currentUser = name;
+  // Use exact name from USERS object (not typed name) to prevent case mismatch with assigned leads
+  const exactUserObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
+  currentUser = exactUserObj ? exactUserObj.name : name;
   // ── PERSIST SESSION — survive page refresh ──
   localStorage.setItem('ycrm_session', JSON.stringify({user: name, role: currentRole}));
   document.getElementById('loginScreen').style.display='none';
@@ -1058,10 +1060,11 @@ function myLeads(){
   }
 
   // Executive sees ONLY cold data assigned to them that hasn't been converted yet
-  // Once converted to a lead (assignedRole changes to 'manager'), it leaves their view
+  // Case-insensitive match to prevent name mismatch bugs
+  const myNameLower = currentUser.toLowerCase().trim();
   return leads.filter(l =>
-    l.assigned === currentUser &&
-    l.assignedRole === 'executive'   // still cold data, not yet converted
+    (l.assigned||'').toLowerCase().trim() === myNameLower &&
+    l.assignedRole === 'executive'
   );
 }
 
@@ -1207,7 +1210,10 @@ function renderDashboard(){
         +'<div style="font-size:1.5rem;margin-bottom:6px">📭</div>'
         +'<div style="font-size:.82rem;font-weight:700;margin-bottom:4px">No cold data assigned yet</div>'
         +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:10px">Admin will upload and assign bulk data to you</div>'
-        +'<button onclick="syncFromCloud().then(()=>renderDashboard())" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:8px 18px;font-size:.78rem;font-weight:700;cursor:pointer">🔄 Refresh Now</button>'
+        +'<div style="display:flex;gap:8px;justify-content:center">'
+        +'<button onclick="syncFromCloud().then(()=>renderDashboard())" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:8px 18px;font-size:.78rem;font-weight:700;cursor:pointer">🔄 Refresh</button>'
+        +'<button onclick="showDebugInfo()" style="background:rgba(255,255,255,.08);color:var(--muted2);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:8px 18px;font-size:.78rem;cursor:pointer">🔍 Debug</button>'
+        +'</div>'
         +'</div>';
   }
 
@@ -1308,13 +1314,17 @@ function renderLeadsList(){
 
   const el=document.getElementById('leads-list');
   if(src.length===0){
-    const isExecNoData = currentRole==='executive' && leads.filter(l=>l.assigned===currentUser).length===0;
+    const myNameLower = currentUser.toLowerCase().trim();
+    const isExecNoData = currentRole==='executive' && leads.filter(l=>(l.assigned||'').toLowerCase().trim()===myNameLower).length===0;
     el.innerHTML = isExecNoData
       ? `<div class="empty">
           <div class="empty-icon">📭</div>
           <div style="font-weight:700;margin-bottom:6px">No data assigned yet</div>
           <div style="font-size:.78rem;color:var(--muted2);margin-bottom:14px">Ask your admin to upload and distribute cold data</div>
-          <button onclick="syncFromCloud().then(()=>renderLeadsList())" style="background:var(--gold);color:#000;border:none;border-radius:10px;padding:10px 20px;font-size:.8rem;font-weight:700;cursor:pointer">🔄 Check for New Data</button>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button onclick="syncFromCloud().then(()=>renderLeadsList())" style="background:var(--gold);color:#000;border:none;border-radius:10px;padding:10px 20px;font-size:.8rem;font-weight:700;cursor:pointer">🔄 Refresh</button>
+            <button onclick="showDebugInfo()" style="background:rgba(255,255,255,.08);color:var(--muted2);border:1px solid var(--border);border-radius:10px;padding:10px 20px;font-size:.8rem;cursor:pointer">🔍 Debug</button>
+          </div>
         </div>`
       : '<div class="empty"><div class="empty-icon">👥</div>No leads found</div>';
     return;
@@ -3014,7 +3024,7 @@ function importLeads(){
       source: r.source || CRM_CONFIG.leadSources[0] || 'Purchased Data',
       interest: r.interest || CRM_CONFIG.plotSizes[0] || 'Not decided',
       status: 'Cold',
-      assigned: exec.name,
+      assigned: exec.name,   // exact name from USERS — must match login name
       assignedRole: 'executive',
       assignedManager: null,
       transferredTo: '',
@@ -3179,6 +3189,63 @@ function showToast(msg,type=''){
   t.textContent=msg;t.className='toast'+(type?' '+type:'');
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+
+// ══════════════════════════════════════════
+//  DEBUG — helps diagnose sync issues
+// ══════════════════════════════════════════
+async function showDebugInfo(){
+  const myNameLower = currentUser.toLowerCase().trim();
+  const allExecLeads = leads.filter(l=>l.assignedRole==='executive');
+  const myLeadsRaw   = leads.filter(l=>(l.assigned||'').toLowerCase().trim()===myNameLower&&l.assignedRole==='executive');
+  
+  let cloudCount = '—';
+  let cloudSample = '—';
+  if(supabaseReady){
+    try{
+      const r = await db.from('leads').select('id,data').limit(5);
+      cloudCount = r.data ? r.data.length + ' (sample of first 5)' : 'error';
+      if(r.data && r.data.length){
+        const parsed = r.data.map(x=>{ try{ return JSON.parse(x.data); }catch(e){ return x; } });
+        cloudSample = parsed.map(x=>(x.assigned||'?')+' / '+(x.assignedRole||'?')).join('<br>');
+      }
+    }catch(e){ cloudCount = 'fetch error: '+e.message; }
+  }
+
+  const names = [...new Set(allExecLeads.map(l=>l.assigned))];
+  
+  const html = `
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:99999;overflow:auto;padding:16px">
+      <div style="background:#0e1420;border:1px solid #e8a020;border-radius:14px;padding:16px;max-width:480px;margin:0 auto">
+        <div style="font-size:1rem;font-weight:800;color:#e8a020;margin-bottom:12px">🔍 Debug Info</div>
+        <div style="font-size:.78rem;line-height:1.8;color:#ccc">
+          <b style="color:#fff">Logged in as:</b> "${currentUser}"<br>
+          <b style="color:#fff">Role:</b> ${currentRole}<br>
+          <b style="color:#fff">Supabase ready:</b> ${supabaseReady}<br>
+          <hr style="border-color:#333;margin:8px 0">
+          <b style="color:#fff">Total leads in memory:</b> ${leads.length}<br>
+          <b style="color:#fff">Executive leads in memory:</b> ${allExecLeads.length}<br>
+          <b style="color:#fff">MY leads (name match):</b> ${myLeadsRaw.length}<br>
+          <b style="color:#fff">Assigned names in data:</b><br>
+          ${names.length ? names.map(n=>'&nbsp;&nbsp;"'+n+'"').join('<br>') : '&nbsp;&nbsp;(none)'}<br>
+          <hr style="border-color:#333;margin:8px 0">
+          <b style="color:#fff">Cloud sample (first 5):</b> ${cloudCount}<br>
+          ${cloudSample}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button onclick="syncFromCloud().then(()=>{renderDashboard();if(document.getElementById('leads-list'))renderLeadsList();showToast('Synced!')})" 
+            style="flex:1;background:#22c98a;color:#000;border:none;border-radius:10px;padding:10px;font-weight:700;cursor:pointer">
+            🔄 Force Sync
+          </button>
+          <button onclick="this.closest('div[style*="position:fixed"]').remove()" 
+            style="flex:1;background:#333;color:#fff;border:none;border-radius:10px;padding:10px;font-weight:700;cursor:pointer">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // ══ INIT ══
@@ -3696,7 +3763,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
         if(userObj){
           currentRole = s.role;
-          currentUser = s.user;
+          // Use exact name from USERS to prevent case mismatch
+          currentUser = userObj.name;
           document.getElementById('loginScreen').style.display='none';
           document.getElementById('appShell').style.display='block';
           document.getElementById('topName').textContent = s.user.split(' ')[0];
