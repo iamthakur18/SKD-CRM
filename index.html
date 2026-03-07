@@ -636,6 +636,11 @@ async function syncFromCloud(){
     renderDashboard();
     if(document.getElementById('leads-list')) renderLeadsList();
     if(currentRole==='admin' && document.getElementById('admin-tab-content')) renderAdminPanel();
+    // For executive: pre-render leads page so data is ready when they tap My Calls
+    if(currentRole==='executive'){
+      const leadsPage = document.getElementById('page-leads');
+      if(leadsPage && leadsPage.classList.contains('active')) renderLeads();
+    }
 
   } catch(e){
     console.warn('Sync failed:', e);
@@ -1174,12 +1179,45 @@ function renderDashboard(){
       +'<div class="stat-card"><div class="stat-label">&#x1F534; Booked / Hold</div><div class="stat-value red">'+booked+'</div></div>'
       +'</div>' : '';
 
+  // Executive: cold data summary card on dashboard
+  let execColdBanner = '';
+  if(currentRole==='executive'){
+    const coldData  = leads.filter(l=>l.assigned===currentUser&&l.assignedRole==='executive');
+    const called    = coldData.filter(l=>l.callCount>0).length;
+    const uncalled  = coldData.length - called;
+    const generated = leads.filter(l=>l.generatedBy===currentUser&&l.assignedRole==='manager').length;
+    execColdBanner = coldData.length > 0
+      ? '<div onclick="goPage(\'leads\',document.querySelector(\'.nav-btn[data-id=\\\"leads\\\"]\'))" style="background:linear-gradient(135deg,rgba(77,142,240,.12),rgba(34,201,138,.08));border:1.5px solid rgba(77,142,240,.3);border-radius:14px;padding:14px;margin-bottom:14px;cursor:pointer">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+        +'<div style="font-size:.85rem;font-weight:700;font-family:Syne,sans-serif">❄️ My Cold Data</div>'
+        +'<span style="font-size:.72rem;color:var(--blue);font-weight:600">Tap to call →</span>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+        +'<div style="text-align:center;background:rgba(0,0,0,.15);border-radius:8px;padding:8px">'
+        +'<div style="font-size:1.3rem;font-weight:800;color:var(--gold)">'+coldData.length+'</div>'
+        +'<div style="font-size:.6rem;color:var(--muted2)">Assigned</div></div>'
+        +'<div style="text-align:center;background:rgba(0,0,0,.15);border-radius:8px;padding:8px">'
+        +'<div style="font-size:1.3rem;font-weight:800;color:var(--red)">'+uncalled+'</div>'
+        +'<div style="font-size:.6rem;color:var(--muted2)">Pending</div></div>'
+        +'<div style="text-align:center;background:rgba(0,0,0,.15);border-radius:8px;padding:8px">'
+        +'<div style="font-size:1.3rem;font-weight:800;color:var(--green)">'+generated+'</div>'
+        +'<div style="font-size:.6rem;color:var(--muted2)">Leads Made</div></div>'
+        +'</div></div>'
+      : '<div style="background:rgba(77,142,240,.07);border:1.5px dashed rgba(77,142,240,.3);border-radius:14px;padding:16px;margin-bottom:14px;text-align:center">'
+        +'<div style="font-size:1.5rem;margin-bottom:6px">📭</div>'
+        +'<div style="font-size:.82rem;font-weight:700;margin-bottom:4px">No cold data assigned yet</div>'
+        +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:10px">Admin will upload and assign bulk data to you</div>'
+        +'<button onclick="syncFromCloud().then(()=>renderDashboard())" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:8px 18px;font-size:.78rem;font-weight:700;cursor:pointer">🔄 Refresh Now</button>'
+        +'</div>';
+  }
+
   document.getElementById('page-dashboard').innerHTML =
     '<div style="font-size:1rem;font-weight:600;font-family:\'Syne\',sans-serif;margin-bottom:3px">'
     +'Hello, <span style="color:var(--gold)">'+currentUser.split(' ')[0]+'</span> &#x1F44B;'
     +'</div>'
     +'<div style="font-size:0.75rem;color:var(--muted2);margin-bottom:16px">Today\'s Overview</div>'
     + transferSection
+    + execColdBanner
     +'<div class="stats-grid">'
     +'<div class="stat-card"><div class="stat-label">&#x1F525; Hot Leads</div><div class="stat-value gold">'+hot+'</div><div class="stat-sub">Follow up today</div></div>'
     +'<div class="stat-card"><div class="stat-label">&#x1F4DE; Calls Today</div><div class="stat-value blue">'+todayCalls+'</div><div class="stat-sub">Logged</div></div>'
@@ -2962,12 +3000,14 @@ function importLeads(){
   let skipped = 0;
   const now = Date.now();
 
+  const newLeadIds = []; // track IDs for push — don't rely on slice(-imported)
   src.forEach((r, i) => {
     if(findDuplicate(r.phone)){ skipped++; return; }
     // Round-robin index — purely position-based, guaranteed even distribution
     const exec = execs[imported % execs.length];
+    const newId = 'L' + (now + i) + Math.random().toString(36).slice(2,7);
     leads.push({
-      id: 'L' + (now + i) + Math.random().toString(36).slice(2,7),
+      id: newId,
       name: r.name.trim(),
       phone: r.phone.trim(),
       phone2: '',
@@ -2986,6 +3026,7 @@ function importLeads(){
       updatedAt: new Date(now + i).toISOString(),
       callCount: 0
     });
+    newLeadIds.push(newId);
     imported++;
   });
 
@@ -2994,11 +3035,11 @@ function importLeads(){
   localStorage.setItem('ycrm_leads', JSON.stringify(leads));
   localStorage.setItem('ycrm_lastupload', new Date().toLocaleDateString('en-IN'));
 
-  // Push each lead to Supabase with stagger to avoid write collision
+  // Push each new lead to Supabase — use tracked IDs, not slice (slice breaks when dupes skipped)
   if(supabaseReady){
-    const newLeads = leads.slice(-imported);
-    newLeads.forEach((l, i) => {
-      setTimeout(() => pushLead(l).catch(()=>{}), i * 25);
+    newLeadIds.forEach((id, i) => {
+      const l = leads.find(x => x.id === id);
+      if(l) setTimeout(() => pushLead(l).catch(e => console.warn('pushLead failed:', e)), i * 30);
     });
   }
 
