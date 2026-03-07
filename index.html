@@ -629,8 +629,12 @@ async function pushCallLog(log){
 
 // Push users to cloud
 async function pushUsers(){
-  if(!supabaseReady) return;
-  await dbSet('app_users', 'users', USERS);
+  if(!supabaseReady){ console.warn('pushUsers: Supabase not ready'); return; }
+  try {
+    const {error} = await db.from('app_users').upsert({id:'users', data: JSON.stringify(USERS)}, {onConflict:'id'});
+    if(error) throw error;
+    console.log('✅ pushUsers OK — managers:', USERS.manager.length, 'executives:', USERS.executive.length);
+  } catch(e){ console.error('❌ pushUsers FAILED:', e); }
 }
 
 // Subscribe to real-time changes
@@ -1662,7 +1666,7 @@ function openAddUserModal(){
   document.getElementById('plotModal').classList.add('show');
 }
 
-function saveNewUser(){
+async function saveNewUser(){
   const name=document.getElementById('nu-name').value.trim();
   const role=document.getElementById('nu-role').value;
   const phone=document.getElementById('nu-phone').value.trim();
@@ -1676,8 +1680,12 @@ function saveNewUser(){
   if(allNames.includes(name.toLowerCase())){showToast('User already exists','error');return;}
   const newUser={id:'u_'+Date.now(),name,pass,phone,email,active:true,createdAt:new Date().toISOString().slice(0,10)};
   USERS[role].push(newUser);
-  saveUsers();closeModal('plotModal');switchAdminTab('users');
-  showToast('✅ User '+name+' created!');
+  localStorage.setItem('ycrm_users', JSON.stringify(USERS));
+  showToast('⏳ Saving user...');
+  await pushUsers();
+  closeModal('plotModal');
+  switchAdminTab('users');
+  showToast('✅ '+name+' added — visible on all devices!');
 }
 
 function openEditUserModal(uid, role){
@@ -2483,7 +2491,7 @@ function importLeads(rows){
 }
 
 function downloadTemplate(){
-  const csv='Name,Phone,Source,Interest,Notes\nRamesh Kumar,9876543210,Purchased Data,200 sq yd,Interested in YEIDA plots\nMeena Devi,9812345678,Reference,100 sq yd,Budget around 18 lakhs';
+  const csv='Name,Phone,Source,Interest,Notes\nCustomer Name,9876543210,Purchased Data,200 sq yd,Notes here';
   const blob=new Blob([csv],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='skd_crm_template.csv';a.click();
   showToast('Template downloaded!');
@@ -2538,27 +2546,46 @@ function showToast(msg,type=''){
 
 // ══ INIT ══
 async function loadFromFirebase() {
-  initSupabase();
+  // Load from localStorage instantly first
+  leads    = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
+  callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
+  const saved = localStorage.getItem('ycrm_users');
+  if(saved) USERS = JSON.parse(saved);
 
+  initSupabase();
   if (!supabaseReady) {
-    leads = JSON.parse(localStorage.getItem('ycrm_leads') || '[]');
-    callLogs = JSON.parse(localStorage.getItem('ycrm_calls') || '[]');
-    populateLoginDropdown();
+    console.warn('Offline — using local data');
     return;
   }
 
-  const ls = document.getElementById('loadingScreen');
-  if (ls) ls.style.display = 'flex';
-
   try {
-    await syncFromCloud();
-  } catch (e) {
-    console.error('Load error:', e);
+    // Load users from cloud FIRST so login shows correct names
+    const cloudUsers = await db.from('app_users').select('*');
+    if(cloudUsers.data && cloudUsers.data.length > 0){
+      const row = cloudUsers.data.find(r => r.id === 'users');
+      if(row && row.data){
+        const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        if(parsed && parsed.admin){
+          USERS = parsed;
+          localStorage.setItem('ycrm_users', JSON.stringify(USERS));
+          console.log('✅ Users from cloud — mgr:', USERS.manager.length, 'exc:', USERS.executive.length);
+        }
+      }
+    }
+    // Then load leads and calls
+    const cloudLeads = await db.from('leads').select('*');
+    if(cloudLeads.data && cloudLeads.data.length > 0){
+      leads = cloudLeads.data.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
+      localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+    }
+    const cloudCalls = await db.from('call_logs').select('*');
+    if(cloudCalls.data && cloudCalls.data.length > 0){
+      callLogs = cloudCalls.data.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
+      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+    }
+  } catch(e) {
+    console.error('Cloud load error:', e);
   }
-
-  if (ls) ls.style.display = 'none';
-
-  populateLoginDropdown();
 }
 document.querySelectorAll('.modal-overlay').forEach(o=>{
   o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show');});
@@ -2794,26 +2821,7 @@ function leadToRow(l){
   };
 }
 
-async function loadFromFirebase(){
-  // Uses same app_users table as syncFromCloud — single consistent DB schema
-  initSupabase();
-  if(!supabaseReady){
-    leads    = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
-    callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
-   await syncFromCloud();
-  populateLoginDropdown();
-}
-  const ls = document.getElementById('loadingScreen');
-  if(ls) ls.style.display='flex';
-  try{
-    await syncFromCloud();
-  } catch(e){
-    console.error('Load error:',e);
-    showToast('⚠️ Offline — using local data','error');
-  }
-  if(ls) ls.style.display='none';
-  populateLoginDropdown();
-}
+
 
 function openDialPad(){
   dialNumber = '';
@@ -2857,12 +2865,12 @@ function rowToLead(r){
 function rowToUser(r){ return {id:r.id,name:r.name,pass:r.pass,phone:r.phone||'',email:r.email||'',active:r.active,createdAt:r.created_at||''}; }
 
 async function saveCallLog(c){
-  try{ await supa.from('call_logs').upsert(callToRow(c)); }
+  try{ await db.from('call_logs').upsert(callToRow(c)); }
   catch(e){ console.error('saveCallLog error:',e); }
 }
 
 async function saveLead(l){
-  try{ await supa.from('leads').upsert(leadToRow(l)); }
+  try{ await db.from('leads').upsert(leadToRow(l)); }
   catch(e){ console.error('saveLead error:',e); }
 }
 
@@ -2877,7 +2885,10 @@ function updateDialDisplay(){
   }
 }
 
-function saveCallToCloud(log){ if(supa) saveCallLog(log); }
+function saveCallToCloud(log){ if(supabaseReady) saveCallLog(log); }
+
+// ── STARTUP ──
+document.addEventListener('DOMContentLoaded', () => { loadFromFirebase(); });
 </script>
 </body>
 </html>
