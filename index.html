@@ -2537,7 +2537,29 @@ function showToast(msg,type=''){
 }
 
 // ══ INIT ══
-populateLoginDropdown();
+async function loadFromFirebase() {
+  initSupabase();
+
+  if (!supabaseReady) {
+    leads = JSON.parse(localStorage.getItem('ycrm_leads') || '[]');
+    callLogs = JSON.parse(localStorage.getItem('ycrm_calls') || '[]');
+    populateLoginDropdown();
+    return;
+  }
+
+  const ls = document.getElementById('loadingScreen');
+  if (ls) ls.style.display = 'flex';
+
+  try {
+    await syncFromCloud();
+  } catch (e) {
+    console.error('Load error:', e);
+  }
+
+  if (ls) ls.style.display = 'none';
+
+  populateLoginDropdown();
+}
 document.querySelectorAll('.modal-overlay').forEach(o=>{
   o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show');});
 });
