@@ -713,7 +713,45 @@ let followupStages = JSON.parse(localStorage.getItem('ycrm_stages')||'null') || 
   {id:'s7', label:'Not Interested',       icon:'❌'},
   {id:'s8', label:'Something Else',       icon:'📝'},
 ];
-function saveStages(){ localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
+function saveStages(){ localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); if(supabaseReady) pushConfig(); }
+
+// ── ADMIN CUSTOMIZABLE CONFIG ──
+let CRM_CONFIG = JSON.parse(localStorage.getItem('ycrm_config')||'null') || {
+  leadStatuses: [
+    {id:'Hot',   label:'🔥 Hot',    color:'#d94040'},
+    {id:'Warm',  label:'🌤️ Warm',  color:'#b5780a'},
+    {id:'Cold',  label:'❄️ Cold',   color:'#2f6fbd'},
+    {id:'Closed',label:'✅ Closed', color:'#1a9e6e'},
+  ],
+  leadSources: [
+    'Purchased Data','Reference','Website','Walk-in','Social Media','IVR Call','Other'
+  ],
+  plotSizes: [
+    '50 sqm','100 sqm','150 sqm','200 sqm','250 sqm','300 sqm','500 sqm','1000 sqm','Other'
+  ],
+  businessType: 'Plots (sqm)', // shown as label
+};
+function saveConfig(){
+  localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG));
+  if(supabaseReady) pushConfig();
+}
+async function pushConfig(){
+  if(!supabaseReady) return;
+  try {
+    await db.from('app_users').upsert({id:'crm_config', data: JSON.stringify({config: CRM_CONFIG, stages: followupStages})}, {onConflict:'id'});
+  } catch(e){ console.warn('pushConfig failed:', e); }
+}
+async function loadConfig(){
+  if(!supabaseReady) return;
+  try {
+    const {data} = await db.from('app_users').select('*').eq('id','crm_config').single();
+    if(data && data.data){
+      const parsed = typeof data.data==='string' ? JSON.parse(data.data) : data.data;
+      if(parsed.config) { CRM_CONFIG = parsed.config; localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG)); }
+      if(parsed.stages) { followupStages = parsed.stages; localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
+    }
+  } catch(e){ console.warn('loadConfig:', e); }
+}
 
 // Geofence helper
 function distanceMeters(lat1,lon1,lat2,lon2){
@@ -955,10 +993,23 @@ function renderPage(page){
 // ══════════════════════════════════════════
 function myLeads(){
   if(currentRole==='admin') return leads;
-  // Manager sees leads assigned to them (either directly or via round-robin)
-  if(currentRole==='manager') return leads.filter(l=>l.assignedManager===currentUser||l.assigned===currentUser);
-  // Executive sees leads they generated (read-only after assignment)
-  return leads.filter(l=>l.generatedBy===currentUser || (l.assigned===currentUser && !l.assignedManager));
+
+  if(currentRole==='manager'){
+    // Manager sees:
+    // 1. Leads admin assigned to them directly (assignedManager === me)
+    // 2. Leads executives generated and transferred/assigned to manager pool (assignedRole==='manager' and assigned===me)
+    // NOT bulk-uploaded executive data (assignedRole==='executive')
+    return leads.filter(l =>
+      l.assignedManager === currentUser ||
+      (l.assigned === currentUser && l.assignedRole === 'manager') ||
+      l.transferredTo === currentUser
+    );
+  }
+
+  // Executive sees ONLY:
+  // Bulk uploaded leads directly assigned to them (assignedRole==='executive')
+  // NOT leads they generated (those go to managers once assigned)
+  return leads.filter(l => l.assigned === currentUser && l.assignedRole === 'executive');
 }
 
 function renderDashboard(){
@@ -1094,6 +1145,8 @@ function renderDashboard(){
 
 
 function sColor(s){
+  const found = CRM_CONFIG.leadStatuses.find(x=>x.id===s);
+  if(found) return found.color;
   if(s==='Hot') return '#f05c5c';
   if(s==='Warm') return '#e8a020';
   if(s==='Cold') return '#4d8ef0';
@@ -1104,11 +1157,12 @@ function sColor(s){
 //  LEADS
 // ══════════════════════════════════════════
 function renderLeads(){
+  const statusIds = CRM_CONFIG.leadStatuses.map(s=>s.id);
   const chips = currentRole==='admin'
-    ? ['All','Hot','Warm','Cold','Closed','transferred']
+    ? ['All',...statusIds,'transferred']
     : currentRole==='manager'
-    ? ['All','Hot','Warm','Cold','Closed','transferred']
-    : ['All','Hot','Warm','Cold'];
+    ? ['All',...statusIds,'transferred']
+    : ['All',...statusIds];
 
   document.getElementById('page-leads').innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1124,12 +1178,11 @@ function renderLeads(){
 }
 
 function chipLabel(c){
-  if(c==='Hot') return '🔥 Hot';
-  if(c==='Warm') return '🌤️ Warm';
-  if(c==='Cold') return '❄️ Cold';
-  if(c==='Closed') return '✅ Closed';
+  if(c==='All') return 'All';
   if(c==='transferred') return '🔄 Transferred';
-  return 'All';
+  const found = CRM_CONFIG.leadStatuses.find(x=>x.id===c);
+  if(found) return found.label;
+  return c;
 }
 
 function setFilter(f,el){
@@ -1173,33 +1226,30 @@ function renderLeadsList(){
 //  ADD LEAD FORM
 // ══════════════════════════════════════════
 function renderAddForm(){
+  // Admin/Manager always assign leads to MANAGERS (not executives)
+  // Executives only see themselves (their generated leads go to manager pool)
   const assignOpts = currentRole==='executive'
     ? `<option>${currentUser}</option>`
-    : USERS.executive.filter(u=>u.active).map(u=>`<option>${u.name}</option>`).join('');
+    : USERS.manager.filter(u=>u.active).map(u=>`<option>${u.name}</option>`).join('');
+
+  const sourceOpts  = CRM_CONFIG.leadSources.map(s=>`<option>${s}</option>`).join('');
+  const interestOpts= CRM_CONFIG.plotSizes.map(s=>`<option>${s}</option>`).join('');
+  const statusOpts  = CRM_CONFIG.leadStatuses.map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
+  const interestLabel = CRM_CONFIG.businessType || 'Plot Size Interest';
 
   document.getElementById('page-add').innerHTML = `
     <div class="section-title" style="margin-top:0">Add New Lead</div>
-    <div class="form-group"><label class="form-label">Customer Name *</label><input class="form-input" id="f-name" placeholder="e.g. Ramesh Kumar" type="text"></div>
+    <div class="form-group"><label class="form-label">Customer Name *</label><input class="form-input" id="f-name" placeholder="Full name" type="text"></div>
     <div class="form-group"><label class="form-label">Phone Number *</label><input class="form-input" id="f-phone" placeholder="98XXXXXXXX" type="tel"></div>
     <div class="form-group"><label class="form-label">Alternate Phone</label><input class="form-input" id="f-phone2" placeholder="Optional" type="tel"></div>
     <div class="form-group"><label class="form-label">Lead Source</label>
-      <select class="form-select" id="f-source">
-        <option>Purchased Data</option><option>Reference</option><option>Website</option>
-        <option>Walk-in</option><option>Social Media</option><option>99acres Inquiry</option><option>Other</option>
-      </select>
+      <select class="form-select" id="f-source">${sourceOpts}</select>
     </div>
-    <div class="form-group"><label class="form-label">Plot Size Interest</label>
-      <select class="form-select" id="f-interest">
-        <option>100 sq yd</option><option>200 sq yd</option><option>300 sq yd</option>
-        <option>500 sq yd</option><option>1000 sq yd+</option><option>Not decided</option>
-      </select>
+    <div class="form-group"><label class="form-label">${interestLabel}</label>
+      <select class="form-select" id="f-interest">${interestOpts}</select>
     </div>
     <div class="form-group"><label class="form-label">Lead Status</label>
-      <select class="form-select" id="f-status">
-        <option value="Hot">🔥 Hot – Very Interested</option>
-        <option value="Warm" selected>🌤️ Warm – Considering</option>
-        <option value="Cold">❄️ Cold – Not sure</option>
-      </select>
+      <select class="form-select" id="f-status">${statusOpts}</select>
     </div>
     ${currentRole!=='executive'?`<div class="form-group"><label class="form-label">Assigned To</label><select class="form-select" id="f-assigned">${assignOpts}</select></div>`:''}
     <div class="form-group"><label class="form-label">Follow-up Date</label><input class="form-input" id="f-followup" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
@@ -1227,16 +1277,34 @@ function addLead(){
     return;
   }
 
-  // ── ASSIGN TO MANAGER (round-robin OR manual) ──
+  // ══════════════════════════════════════════════════════
+  // ASSIGNMENT RULES:
+  // Admin adds lead    → assign to selected Manager (roundrobin or manual)
+  // Manager adds lead  → assign to themselves (they own it)
+  // Executive adds lead→ saved as "generated by executive", goes to pending
+  //                      Admin/Manager then assigns it to a Manager
+  // ══════════════════════════════════════════════════════
+
   let assignedManager = null;
   let pendingAdmin = false;
 
-  if(leadAssignMode === 'roundrobin'){
-    assignedManager = getNextManager();
-  } else {
-    // manual mode — admin assigns later; lead goes into pending queue
+  if(currentRole === 'executive'){
+    // Executive generated lead → goes to pending, admin assigns to a manager
     pendingAdmin = true;
     assignedManager = null;
+  } else if(currentRole === 'manager'){
+    // Manager adds lead → assigned to themselves
+    assignedManager = currentUser;
+  } else {
+    // Admin adds lead
+    if(leadAssignMode === 'roundrobin'){
+      assignedManager = getNextManager();
+    } else {
+      // manual mode
+      const selEl = document.getElementById('f-assigned');
+      assignedManager = selEl ? selEl.value : null;
+      if(!assignedManager){ pendingAdmin = true; }
+    }
   }
 
   const l={
@@ -1245,7 +1313,8 @@ function addLead(){
     source:document.getElementById('f-source').value,
     interest:document.getElementById('f-interest').value,
     status:document.getElementById('f-status').value,
-    generatedBy: currentRole==='executive' ? currentUser : 'Admin',
+    generatedBy: currentRole==='executive' ? currentUser : (currentRole==='manager' ? currentUser : 'Admin'),
+    generatedByRole: currentRole,
     assigned: assignedManager || 'Unassigned',
     assignedManager: assignedManager,
     assignedRole:'manager',
@@ -1257,12 +1326,14 @@ function addLead(){
     assignedAt: assignedManager ? new Date().toISOString() : '',
     callCount:0
   };
-  leads.unshift(l);save();
+  leads.unshift(l); save();
   renderAddForm();
-  if(pendingAdmin){
-    showToast('✅ Lead saved! Waiting for Admin to assign.');
+  if(pendingAdmin && currentRole==='executive'){
+    showToast('✅ Lead saved! Admin will assign it to a manager.');
+  } else if(pendingAdmin){
+    showToast('✅ Lead saved! Waiting for assignment.');
   } else {
-    showToast('✅ Lead saved! → Assigned to '+assignedManager);
+    showToast('✅ Lead saved! → Assigned to Manager: '+assignedManager);
   }
   renderDashboard();
 }
@@ -1402,7 +1473,7 @@ function adminTeamHTML(){
   }));
 
   const tableRows = assignLog.map(r=>{
-    const statusColor = r.status==='Hot'?'var(--hot)':r.status==='Warm'?'var(--warm)':r.status==='Cold'?'var(--cold)':r.status==='Closed'?'var(--green)':'var(--purple)';
+    const statusColor = sColor(r.status);
     return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:.75rem">'
       +'<div><div style="font-weight:600">'+r.name+'</div><div style="font-size:.65rem;color:var(--muted2);font-family:DM Mono,monospace">'+r.phone+'</div></div>'
       +'<div style="color:var(--muted2)">'+r.genBy+'</div>'
@@ -1468,7 +1539,7 @@ function buildAdminReassignHTML(){
 
     pendingSection = '<div style="background:var(--card);border:2px solid '+(pending.length>0?'var(--gold)':'var(--border)')+';border-radius:14px;padding:14px;margin-bottom:12px">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
-      +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;color:'+(pending.length>0?'var(--gold)':'var(--muted2)')+'">⏳ Pending Assignment</div>'
+      +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;color:'+(pending.length>0?'var(--gold)':'var(--muted2)')+'">⏳ Executive-Generated Leads (Assign to Manager)</div>'
       +'<span style="font-size:.65rem;font-weight:700;padding:3px 9px;border-radius:10px;background:'+(pending.length>0?'rgba(232,160,32,.15)':'rgba(34,201,138,.12)')+';color:'+(pending.length>0?'var(--gold)':'var(--green)')+';border:1px solid '+(pending.length>0?'rgba(232,160,32,.3)':'rgba(34,201,138,.3)')+'">'+pending.length+' leads</span>'
       +'</div>'
       + pendingRows
@@ -2004,7 +2075,118 @@ function adminSettingsHTML(){
     +'<button class="btn-secondary" style="width:100%;color:var(--red);border-color:var(--red)" onclick="clearAllData()">&#x1F5D1;&#xFE0F; Clear All Leads</button>'
     +'</div>';
 
-  return locCard + locationPanel + stagesCard + passCard + teamPassCards + exportDanger;
+  // ── CRM CUSTOMIZATION CARD ──
+  const configCard = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">'
+    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:4px">⚙️ CRM Customization</div>'
+    +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:14px">Customize fields, labels and options for your business</div>'
+
+    // Business type label
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Interest Field Label (e.g. Plot Size, Budget, BHK)</label>'
+    +'<input class="form-input" id="cfg-biztype" value="'+CRM_CONFIG.businessType+'" placeholder="e.g. Plot Size (sqm)" style="margin-bottom:0"></div>'
+
+    // Lead Statuses
+    +'<div style="font-size:.78rem;font-weight:700;margin-bottom:6px;margin-top:4px">📊 Lead Statuses</div>'
+    +'<div id="cfg-statuses-list">'
+    +CRM_CONFIG.leadStatuses.map((s,i)=>'<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:5px">'
+      +'<div style="width:10px;height:10px;border-radius:50%;background:'+s.color+';flex-shrink:0"></div>'
+      +'<span style="flex:1;font-size:.82rem;font-weight:600">'+s.label+'</span>'
+      +(CRM_CONFIG.leadStatuses.length>2?'<button onclick="deleteLeadStatus(\''+s.id+'\')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.9rem;padding:0">✕</button>':'')
+      +'</div>').join('')
+    +'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:12px;margin-top:6px">'
+    +'<input class="form-input" id="cfg-status-emoji" placeholder="🏠" style="flex:0 0 52px;margin-bottom:0;text-align:center">'
+    +'<input class="form-input" id="cfg-status-label" placeholder="Status name e.g. Site Visit Done" style="flex:1;margin-bottom:0">'
+    +'<button class="action-btn primary" onclick="addLeadStatus()" style="flex:0 0 54px">Add</button>'
+    +'</div>'
+
+    // Lead Sources
+    +'<div style="font-size:.78rem;font-weight:700;margin-bottom:6px">📥 Lead Sources</div>'
+    +'<div id="cfg-sources-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
+    +CRM_CONFIG.leadSources.map(s=>'<div style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:.75rem">'
+      +'<span>'+s+'</span>'
+      +(CRM_CONFIG.leadSources.length>2?'<button onclick="deleteLeadSource(\''+s.replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.8rem;padding:0;line-height:1">✕</button>':'')
+      +'</div>').join('')
+    +'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:14px">'
+    +'<input class="form-input" id="cfg-source-new" placeholder="e.g. Facebook Ad, IVR, Builder Mela" style="flex:1;margin-bottom:0">'
+    +'<button class="action-btn primary" onclick="addLeadSource()" style="flex:0 0 54px">Add</button>'
+    +'</div>'
+
+    // Plot Sizes / Interest Options
+    +'<div style="font-size:.78rem;font-weight:700;margin-bottom:6px">📐 Interest Options (Plot Sizes / Budget / BHK)</div>'
+    +'<div id="cfg-sizes-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
+    +CRM_CONFIG.plotSizes.map(s=>'<div style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:.75rem">'
+      +'<span>'+s+'</span>'
+      +(CRM_CONFIG.plotSizes.length>2?'<button onclick="deletePlotSize(\''+s.replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.8rem;padding:0;line-height:1">✕</button>':'')
+      +'</div>').join('')
+    +'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:14px">'
+    +'<input class="form-input" id="cfg-size-new" placeholder="e.g. 200 sqm, 2BHK, ₹50L Budget" style="flex:1;margin-bottom:0">'
+    +'<button class="action-btn primary" onclick="addPlotSize()" style="flex:0 0 54px">Add</button>'
+    +'</div>'
+
+    +'<button class="btn-primary" onclick="saveCRMConfig()">💾 Save All Customizations</button>'
+    +'</div>';
+
+  return configCard + locCard + locationPanel + stagesCard + passCard + teamPassCards + exportDanger;
+}
+
+
+// ══════════════════════════════════════════
+//  CRM CONFIG MANAGEMENT
+// ══════════════════════════════════════════
+function saveCRMConfig(){
+  const biz = (document.getElementById('cfg-biztype')||{}).value?.trim();
+  if(biz) CRM_CONFIG.businessType = biz;
+  saveConfig();
+  showToast('✅ Customizations saved!');
+  switchAdminTab('settings');
+}
+
+function addLeadStatus(){
+  const emoji = (document.getElementById('cfg-status-emoji')||{}).value?.trim() || '●';
+  const label = (document.getElementById('cfg-status-label')||{}).value?.trim();
+  if(!label){ showToast('Enter a status name','error'); return; }
+  const id = label.replace(/\s+/g,'_');
+  if(CRM_CONFIG.leadStatuses.find(s=>s.id===id)){ showToast('Already exists','error'); return; }
+  const colors = ['#8b5cf6','#f59e0b','#10b981','#3b82f6','#ef4444','#ec4899'];
+  CRM_CONFIG.leadStatuses.push({id, label: emoji+' '+label, color: colors[CRM_CONFIG.leadStatuses.length % colors.length]});
+  saveConfig();
+  switchAdminTab('settings');
+}
+
+function deleteLeadStatus(id){
+  if(CRM_CONFIG.leadStatuses.length <= 2){ showToast('Need at least 2 statuses','error'); return; }
+  CRM_CONFIG.leadStatuses = CRM_CONFIG.leadStatuses.filter(s=>s.id!==id);
+  saveConfig(); switchAdminTab('settings');
+}
+
+function addLeadSource(){
+  const val = (document.getElementById('cfg-source-new')||{}).value?.trim();
+  if(!val){ showToast('Enter a source name','error'); return; }
+  if(CRM_CONFIG.leadSources.includes(val)){ showToast('Already exists','error'); return; }
+  CRM_CONFIG.leadSources.push(val);
+  saveConfig(); switchAdminTab('settings');
+}
+
+function deleteLeadSource(src){
+  if(CRM_CONFIG.leadSources.length <= 2){ showToast('Need at least 2 sources','error'); return; }
+  CRM_CONFIG.leadSources = CRM_CONFIG.leadSources.filter(s=>s!==src);
+  saveConfig(); switchAdminTab('settings');
+}
+
+function addPlotSize(){
+  const val = (document.getElementById('cfg-size-new')||{}).value?.trim();
+  if(!val){ showToast('Enter a size/interest option','error'); return; }
+  if(CRM_CONFIG.plotSizes.includes(val)){ showToast('Already exists','error'); return; }
+  CRM_CONFIG.plotSizes.push(val);
+  saveConfig(); switchAdminTab('settings');
+}
+
+function deletePlotSize(size){
+  if(CRM_CONFIG.plotSizes.length <= 2){ showToast('Need at least 2 options','error'); return; }
+  CRM_CONFIG.plotSizes = CRM_CONFIG.plotSizes.filter(s=>s!==size);
+  saveConfig(); switchAdminTab('settings');
 }
 
 function saveOfficeLocation(){
@@ -2124,7 +2306,12 @@ function saveUserPassFromSettings(uid, role){
 
 // ─── MANAGER PANEL ───
 function renderManagerPanel(){
-  const myL=leads.filter(l=>l.assigned===currentUser||l.transferredTo===currentUser);
+  // Manager sees: leads assigned to them by admin + leads from executives
+  const myL = leads.filter(l =>
+    l.assignedManager === currentUser ||
+    (l.assigned === currentUser && l.assignedRole === 'manager') ||
+    l.transferredTo === currentUser
+  );
   const hot=myL.filter(l=>l.status==='Hot').length;
   const closed=myL.filter(l=>l.status==='Closed').length;
   const pending=myL.filter(l=>l.status==='transferred').length;
@@ -2152,6 +2339,7 @@ function renderManagerPanel(){
 
 // ─── EXECUTIVE PANEL ───
 function renderExecutivePanel(){
+  // Executive sees only bulk-uploaded leads assigned to them
   const myL=leads.filter(l=>l.assigned===currentUser&&l.assignedRole==='executive');
   document.getElementById('page-more').innerHTML=`
     <div class="section-title" style="margin-top:0">Transfer to Manager</div>
@@ -2190,7 +2378,7 @@ function openLead(id){
   const canClose=currentRole==='admin'||currentRole==='manager';
   const canDelete=currentRole==='admin';
   const isReadOnly = currentRole==='executive' && l.assignedManager;
-  const statusOpts=['Hot','Warm','Cold','Closed'].map(s=>'<option value="'+s+'"'+(s===l.status?' selected':'')+'>'+s+'</option>').join('');
+  const statusOpts=CRM_CONFIG.leadStatuses.map(s=>'<option value="'+s.id+'"'+(s.id===l.status?' selected':'')+'>'+s.label+'</option>').join('');
 
   // Hide executive name from manager — show only for admin
   const assignedByLine = currentRole==='admin'
@@ -2483,20 +2671,43 @@ function processFile(file){
 }
 
 function importLeads(rows){
-  // rows passed as encoded JSON
+  // Bulk upload → ALWAYS assigned to executives (they work raw data)
+  // Distributed round-robin across all active executives
   const src=typeof rows==='string'?JSON.parse(rows.replace(/'/g,'"')):rows;
-  const exec=USERS.executive[0].name;
+  const execs = USERS.executive.filter(u=>u.active);
+  if(!execs.length){ showToast('No active executives to assign to!','error'); return; }
+  let execIdx = 0;
+  // Get current counts to continue round-robin from where it left off
+  const execCounts = {};
+  execs.forEach(e=>{ execCounts[e.name] = leads.filter(l=>l.assigned===e.name&&l.assignedRole==='executive').length; });
+  // Start with executive who has fewest leads
+  execIdx = execs.reduce((minI,e,i)=> execCounts[e.name] < execCounts[execs[minI].name] ? i : minI, 0);
+
   src.forEach(r=>{
+    if(findDuplicate(r.phone)) return; // skip duplicates silently
+    const exec = execs[execIdx % execs.length];
+    execIdx++;
     leads.push({
       id:'L'+Date.now()+Math.random().toString(36).slice(2,6),
-      name:r.name,phone:r.phone,phone2:'',
-      source:r.source||'Purchased Data',interest:r.interest||'Not decided',
-      status:'Cold',assigned:exec,assignedRole:'executive',transferredTo:'',
-      followup:'',notes:r.notes||'',createdAt:new Date().toISOString(),callCount:0
+      name:r.name, phone:r.phone, phone2:'',
+      source:r.source||CRM_CONFIG.leadSources[0]||'Purchased Data',
+      interest:r.interest||CRM_CONFIG.plotSizes[0]||'Not decided',
+      status:CRM_CONFIG.leadStatuses[CRM_CONFIG.leadStatuses.length-1]?.id||'Cold',
+      assigned: exec.name,
+      assignedRole:'executive',
+      assignedManager: null,
+      transferredTo: '',
+      generatedBy:'Bulk Upload',
+      generatedByRole:'admin',
+      pendingAssign: false,
+      followup:'', notes:r.notes||'',
+      createdAt:new Date().toISOString(), callCount:0
     });
   });
   localStorage.setItem('ycrm_lastupload',new Date().toLocaleDateString('en-IN'));
-  save();showToast(`✅ ${src.length} leads imported!`);renderAdminPanel();renderDashboard();
+  save();
+  showToast(`✅ ${src.length} leads imported → distributed to ${execs.length} executive(s)!`);
+  renderAdminPanel(); renderDashboard();
 }
 
 function downloadTemplate(){
@@ -2595,6 +2806,8 @@ async function loadFromFirebase() {
   } catch(e) {
     console.error('Cloud load error:', e);
   }
+  // Also load CRM config (statuses, sources, sizes)
+  await loadConfig();
 }
 document.querySelectorAll('.modal-overlay').forEach(o=>{
   o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('show');});
