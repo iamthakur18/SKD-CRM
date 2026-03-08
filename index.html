@@ -881,52 +881,28 @@ async function pushConfig(){
   } catch(e){ console.warn('pushConfig failed:', e); }
 }
 
-function plotToRow(p){
-  return {
+// Upsert a single plot to Supabase (insert if new, update if exists)
+async function pushSinglePlot(p){
+  if(!supabaseReady) return;
+  const row = {
     id: p.id,
     sector: p.sector || '',
     size: p.size || '',
     price: p.price || '',
     status: p.status || 'Available',
-    'plot description': p.plotDescription || '',
-    plot_description: p.plotDescription || ''
+    'plot description': p.plotDescription || ''
   };
-}
-
-async function pushSinglePlot(p){
-  if(!supabaseReady) return;
-  const row = plotToRow(p);
-  console.log('pushSinglePlot:', JSON.stringify(row));
   try {
-    const patchRes = await fetch(SUPA_URL + '/rest/v1/plots?id=eq.' + encodeURIComponent(p.id), {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json', 'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(row)
-    });
-    const patchText = await patchRes.text();
-    console.log('PATCH', patchRes.status, patchText);
-    if(patchRes.ok && patchText && patchText !== '[]') return;
-    const postRes = await fetch(SUPA_URL + '/rest/v1/plots', {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify([row])
-    });
-    const postText = await postRes.text();
-    console.log('POST', postRes.status, postText);
-    if(!postRes.ok) console.warn('pushSinglePlot POST failed:', postRes.status, postText);
-  } catch(e){ console.warn('pushSinglePlot error:', e.message); }
+    const { error } = await db.from('plots').upsert(row, { onConflict: 'id' });
+    if(error){ console.warn('pushSinglePlot error:', error.message, error); showToast('❌ Cloud save failed: ' + error.message, 'error'); }
+    else { console.log('✅ Plot upserted to cloud:', p.id); }
+  } catch(e){ console.warn('pushSinglePlot exception:', e.message); }
 }
 
 async function pushPlots(){
   if(!supabaseReady) return;
   for(const p of plots){ await pushSinglePlot(p); }
-  console.log('pushPlots done:', plots.length, 'plots');
+  console.log('✅ All plots pushed:', plots.length);
 }
 async function loadConfig(){
   if(!supabaseReady) return;
