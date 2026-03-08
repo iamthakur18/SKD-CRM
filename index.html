@@ -864,19 +864,33 @@ async function pushConfig(){
 async function pushPlots(){
   if(!supabaseReady) return;
   try {
-    // Store all plots as one row in app_users for simplicity
-    const res = await fetch(SUPA_URL + '/rest/v1/app_users', {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify({id: 'plots_data', data: JSON.stringify(plots)})
+    // Save all plots directly to plots table — one row per plot
+    const rows = plots.map(p => ({
+      id: p.id,
+      sector: p.sector || '',
+      size: p.size || '',
+      price: p.price || '',
+      status: p.status || 'Available'
+    }));
+    // First clear old rows, then insert fresh
+    await fetch(SUPA_URL + '/rest/v1/plots?id=neq.__none__', {
+      method: 'DELETE',
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
     });
-    if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
-    else console.log('✅ Plots pushed to cloud:', plots.length);
+    if(rows.length > 0){
+      const res = await fetch(SUPA_URL + '/rest/v1/plots', {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(rows)
+      });
+      if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
+      else console.log('✅ Plots pushed to cloud:', rows.length);
+    }
   } catch(e){ console.warn('pushPlots error:', e.message); }
 }
 async function loadConfig(){
@@ -894,20 +908,17 @@ async function loadConfig(){
     }
   } catch(e){ console.warn('loadConfig:', e); }
 
-  // Load plots from cloud
+  // Load plots directly from plots table
   try {
-    const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.plots_data&select=data', {
+    const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
-    if(res.ok){
-      const rows = await res.json();
-      if(rows && rows.length > 0 && rows[0].data){
-        const cloudPlots = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
-        if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
-          plots = cloudPlots;
-          localStorage.setItem('ycrm_plots', JSON.stringify(plots));
-          console.log('✅ Plots loaded from cloud:', plots.length);
-        }
+    if(plotsRes.ok){
+      const cloudPlots = await plotsRes.json();
+      if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
+        plots = cloudPlots;
+        localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+        console.log('✅ Plots loaded from cloud:', plots.length);
       }
     }
   } catch(e){ console.warn('loadPlots:', e.message); }
