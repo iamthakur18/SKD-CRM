@@ -1825,40 +1825,84 @@ function setPlotFilter(f,el){
 }
 
 function openPlot(id){
-  const p=plots.find(x=>x.id===id);if(!p)return;
+  const p=plots.find(x=>x.id===id); if(!p) return;
   activePlotId=id;
-  document.getElementById('plot-modal-title').textContent='🏗️ '+(p.name||p.sector||p.id);
   const statuses=['Available','Hold','Booked'];
+  const statusColor = p.status==='Available'?'var(--green)':p.status==='Booked'?'var(--red)':'var(--gold)';
+  document.getElementById('plot-modal-title').textContent='🏗️ '+(p.name||p.sector||p.id);
   document.getElementById('plot-modal-body').innerHTML=`
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
-      <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;margin-bottom:4px">${p.size}</div>
-      <div style="font-size:.8rem;color:var(--muted2);margin-bottom:4px">📍 ${p.sector}</div>
-      <div style="font-size:1rem;font-weight:700;color:var(--gold);margin-bottom:8px">${p.price}</div>
-      ${p.plotDescription ? `<div style="font-size:.78rem;color:var(--muted2);margin-bottom:8px">📋 ${p.plotDescription}</div>` : ''}
-      <div><span class="status-dot ${p.status.toLowerCase()}"></span><span style="font-size:.78rem">${p.status}</span></div>
+    <!-- VIEW MODE -->
+    <div id="plot-view-mode">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+          <div>
+            <div style="font-size:1.4rem;font-weight:800;font-family:'Syne',sans-serif">${p.name||p.sector||''}</div>
+            <div style="font-size:.8rem;color:var(--muted2);margin-top:2px">📍 ${p.sector}</div>
+          </div>
+          <span style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}44;border-radius:20px;padding:4px 12px;font-size:.7rem;font-weight:700">${p.status}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div style="background:var(--card);border-radius:10px;padding:10px">
+            <div style="font-size:.62rem;color:var(--muted2);margin-bottom:2px">SIZE</div>
+            <div style="font-size:.95rem;font-weight:700">${p.size}</div>
+          </div>
+          <div style="background:var(--card);border-radius:10px;padding:10px">
+            <div style="font-size:.62rem;color:var(--muted2);margin-bottom:2px">PRICE</div>
+            <div style="font-size:.95rem;font-weight:700;color:var(--gold)">${p.price}</div>
+          </div>
+        </div>
+        ${p.plotDescription?`<div style="font-size:.78rem;color:var(--muted2);background:var(--card);border-radius:8px;padding:8px">📋 ${p.plotDescription}</div>`:''}
+      </div>
+      ${currentRole==='admin'?`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn-primary" onclick="switchToEditMode('${id}')">✏️ Edit Plot</button>
+        <button class="btn-secondary" onclick="deletePlot('${id}')" style="color:var(--red);border-color:var(--red)">🗑️ Delete</button>
+      </div>`:'<p style="font-size:.8rem;color:var(--muted2);text-align:center">Contact admin to make changes.</p>'}
     </div>
-    ${currentRole==='admin'?`
-    <div class="form-group"><label class="form-label">Change Status</label>
-      <select class="form-select" id="plot-status-sel">${statuses.map(s=>`<option${s===p.status?' selected':''}>${s}</option>`).join('')}</select>
+
+    <!-- EDIT MODE (hidden by default) -->
+    <div id="plot-edit-mode" style="display:none">
+      <div style="font-size:.8rem;font-weight:700;color:var(--gold);margin-bottom:12px">✏️ Editing Plot</div>
+      <div class="form-group"><label class="form-label">Plot Name</label>
+        <input class="form-input" id="edit-name" value="${p.name||''}" placeholder="e.g. YEIDA Plot A1">
+      </div>
+      <div class="form-group"><label class="form-label">Sector</label>
+        <input class="form-input" id="edit-sector" value="${p.sector||''}" placeholder="e.g. Sector 18">
+      </div>
+      <div class="form-group"><label class="form-label">Size</label>
+        <input class="form-input" id="edit-size" value="${p.size||''}" placeholder="e.g. 300 SQM">
+      </div>
+      <div class="form-group"><label class="form-label">Price</label>
+        <input class="form-input" id="edit-price" value="${p.price||''}" placeholder="e.g. 2.15CR">
+      </div>
+      <div class="form-group"><label class="form-label">Description</label>
+        <input class="form-input" id="edit-desc" value="${p.plotDescription||''}" placeholder="e.g. Corner, Park facing...">
+      </div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select class="form-select" id="edit-status">${statuses.map(s=>`<option${s===p.status?' selected':''}>${s}</option>`).join('')}</select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn-secondary" onclick="document.getElementById('plot-edit-mode').style.display='none';document.getElementById('plot-view-mode').style.display='block'">Cancel</button>
+        <button class="btn-primary" onclick="savePlotEdit('${id}')">💾 Save</button>
+      </div>
     </div>
-    <div class="form-group"><label class="form-label">Update Price</label>
-      <input class="form-input" id="plot-price-inp" value="${p.price}" placeholder="e.g. ₹20L">
-    </div>
-    <div class="form-group"><label class="form-label">Plot Description</label>
-      <input class="form-input" id="plot-desc-inp" value="${p.plotDescription||''}" placeholder="e.g. Corner, Park facing...">
-    </div>
-    <button class="btn-primary" onclick="savePlotEdit('${id}')">Save Changes</button>
-    <button class="btn-secondary" onclick="deletePlot('${id}')" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red)">Delete Plot</button>
-    `:`<p style="font-size:.8rem;color:var(--muted2)">Contact admin to change plot status.</p>`}
   `;
   document.getElementById('plotModal').classList.add('show');
 }
 
+function switchToEditMode(id){
+  document.getElementById('plot-view-mode').style.display='none';
+  document.getElementById('plot-edit-mode').style.display='block';
+}
+
 async function savePlotEdit(id){
   const p=plots.find(x=>x.id===id); if(!p) return;
-  p.status = document.getElementById('plot-status-sel').value;
-  p.price  = document.getElementById('plot-price-inp').value;
-  p.plotDescription = (document.getElementById('plot-desc-inp')||{}).value || p.plotDescription || '';
+  p.name   = document.getElementById('edit-name').value.trim();
+  p.sector = document.getElementById('edit-sector').value.trim();
+  p.size   = document.getElementById('edit-size').value.trim();
+  p.price  = document.getElementById('edit-price').value.trim();
+  p.plotDescription = document.getElementById('edit-desc').value.trim();
+  p.status = document.getElementById('edit-status').value;
   save();
   closeModal('plotModal');
   showToast('⏳ Saving to cloud...');
