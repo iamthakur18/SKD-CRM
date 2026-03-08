@@ -783,7 +783,8 @@ async function syncPlotsFromCloud(){
         sector: p.sector || '',
         size: p.size || '',
         price: p.price || '',
-        status: p.status || 'Available'
+        status: p.status || 'Available',
+        plotDescription: p['plot description'] || p['plot_description'] || p.plotDescription || ''
       }));
       localStorage.setItem('ycrm_plots', JSON.stringify(plots));
       console.log('🔄 Plots synced from cloud:', plots.length);
@@ -876,10 +877,11 @@ async function pushSinglePlot(p){
   try {
     const row = {
       id: p.id,
-      sector: p.name ? (p.name + (p.sector ? ' | ' + p.sector : '')) : (p.sector || ''),
+      sector: p.sector || '',
       size: p.size || '',
       price: p.price || '',
-      status: p.status || 'Available'
+      status: p.status || 'Available',
+      'plot description': p.plotDescription || ''
     };
     // First try DELETE existing row then INSERT fresh (most reliable for upsert)
     await fetch(SUPA_URL + '/rest/v1/plots?id=eq.' + encodeURIComponent(p.id), {
@@ -947,7 +949,8 @@ async function loadConfig(){
           sector: p.sector || '',
           size: p.size || '',
           price: p.price || '',
-          status: p.status || 'Available'
+          status: p.status || 'Available',
+          plotDescription: p['plot description'] || p['plot_description'] || p.plotDescription || ''
         }));
         localStorage.setItem('ycrm_plots', JSON.stringify(plots));
         console.log('✅ Plots from cloud:', plots.length);
@@ -1891,11 +1894,12 @@ async function saveNewPlot(){
   const id = 'PLT_' + Date.now() + '_' + Math.random().toString(36).slice(2,6).toUpperCase();
   const newPlot = {
     id,
-    name: name || document.getElementById('np-sector').value,
+    name: name,
     sector: document.getElementById('np-sector').value,
     size: document.getElementById('np-size').value,
     price: document.getElementById('np-price').value,
-    status: document.getElementById('np-status').value
+    status: document.getElementById('np-status').value,
+    plotDescription: (document.getElementById('np-desc')||{}).value || ''
   };
   plots.push(newPlot);
   save();
