@@ -662,7 +662,7 @@ async function pushLead(lead){
   if(!supabaseReady) return;
   lead.updatedAt = new Date().toISOString();
   const {error} = await db.from('leads').upsert(
-    {id: lead.id, data: JSON.stringify(lead), updated_at: lead.updatedAt},
+    {id: lead.id, data: JSON.stringify(lead)},
     {onConflict: 'id'}
   );
   if(error) console.warn('pushLead failed for', lead.id, ':', error.message, error.code);
@@ -680,7 +680,7 @@ async function saveAllLeadsToCloud(){
     for(const chunk of chunks){
       const rows = chunk.map(l => {
         l.updatedAt = new Date().toISOString();
-        return {id: l.id, data: JSON.stringify(l), updated_at: l.updatedAt};
+        return {id: l.id, data: JSON.stringify(l)};
       });
       const {error} = await db.from('leads').upsert(rows, {onConflict: 'id'});
       if(error){
@@ -3123,7 +3123,7 @@ async function importLeads(){
         const l = leads.find(x => x.id === id);
         if(!l) return null;
         l.updatedAt = new Date().toISOString();
-        return {id: l.id, data: JSON.stringify(l), updated_at: l.updatedAt};
+        return {id: l.id, data: JSON.stringify(l)};
       }).filter(Boolean);
 
       const res = await fetch(SUPA_URL + '/rest/v1/leads', {
