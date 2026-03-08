@@ -792,7 +792,7 @@ async function syncPlotsFromCloud(){
           size: p.size || '',
           price: p.price || '',
           status: p.status || 'Available',
-          plotDescription: p.plot_description || ''
+          plotDescription: p['plot description'] || p['plot_description'] || ''
         }));
         localStorage.setItem('ycrm_plots', JSON.stringify(plots));
         console.log('🔄 Plots synced from cloud:', plots.length);
@@ -829,16 +829,7 @@ let adminTab = 'team';
 
 let leads = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
 let callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
-let plots = JSON.parse(localStorage.getItem('ycrm_plots')||'null') || [
-  {id:'YD-A101',sector:'Sector 22D',size:'100 sq yd',price:'₹18L',status:'Available'},
-  {id:'YD-A102',sector:'Sector 22D',size:'200 sq yd',price:'₹34L',status:'Booked'},
-  {id:'YD-B201',sector:'Sector 24', size:'100 sq yd',price:'₹16L',status:'Available'},
-  {id:'YD-B202',sector:'Sector 24', size:'300 sq yd',price:'₹48L',status:'Hold'},
-  {id:'YD-C301',sector:'Sector 25', size:'500 sq yd',price:'₹75L',status:'Available'},
-  {id:'YD-C302',sector:'Sector 25', size:'100 sq yd',price:'₹17L',status:'Available'},
-  {id:'YD-D401',sector:'Sector 28', size:'200 sq yd',price:'₹30L',status:'Booked'},
-  {id:'YD-D402',sector:'Sector 28', size:'1000 sq yd',price:'₹1.4Cr',status:'Available'},
-];
+let plots = []; // Always loaded fresh from Supabase cloud
 let integrations = JSON.parse(localStorage.getItem('ycrm_int')||'{"sheets":false,"email":false,"acres99":false}');
 
 // Office location & geofence
@@ -890,31 +881,52 @@ async function pushConfig(){
   } catch(e){ console.warn('pushConfig failed:', e); }
 }
 
-async function pushPlots(){
+function plotToRow(p){
+  return {
+    id: p.id,
+    sector: p.sector || '',
+    size: p.size || '',
+    price: p.price || '',
+    status: p.status || 'Available',
+    'plot description': p.plotDescription || '',
+    plot_description: p.plotDescription || ''
+  };
+}
+
+async function pushSinglePlot(p){
   if(!supabaseReady) return;
+  const row = plotToRow(p);
+  console.log('pushSinglePlot:', JSON.stringify(row));
   try {
-    // Use upsert per-plot so other devices' plots aren't wiped on partial updates
-    const rows = plots.map(p => ({
-      id: p.id,
-      sector: p.sector || '',
-      size: p.size || '',
-      price: p.price || '',
-      status: p.status || 'Available',
-      plot_description: p.plotDescription || ''
-    }));
-    const res = await fetch(SUPA_URL + '/rest/v1/plots', {
+    const patchRes = await fetch(SUPA_URL + '/rest/v1/plots?id=eq.' + encodeURIComponent(p.id), {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json', 'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(row)
+    });
+    const patchText = await patchRes.text();
+    console.log('PATCH', patchRes.status, patchText);
+    if(patchRes.ok && patchText && patchText !== '[]') return;
+    const postRes = await fetch(SUPA_URL + '/rest/v1/plots', {
       method: 'POST',
       headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
+        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates'
       },
-      body: JSON.stringify(rows)
+      body: JSON.stringify([row])
     });
-    if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
-    else console.log('✅ Plots pushed to cloud:', rows.length);
-  } catch(e){ console.warn('pushPlots error:', e.message); }
+    const postText = await postRes.text();
+    console.log('POST', postRes.status, postText);
+    if(!postRes.ok) console.warn('pushSinglePlot POST failed:', postRes.status, postText);
+  } catch(e){ console.warn('pushSinglePlot error:', e.message); }
+}
+
+async function pushPlots(){
+  if(!supabaseReady) return;
+  for(const p of plots){ await pushSinglePlot(p); }
+  console.log('pushPlots done:', plots.length, 'plots');
 }
 async function loadConfig(){
   if(!supabaseReady) return;
@@ -931,25 +943,25 @@ async function loadConfig(){
     }
   } catch(e){ console.warn('loadConfig:', e); }
 
-  // Load plots directly from plots table
+  // Load plots directly from plots table — cloud ALWAYS overrides local cache
+  localStorage.removeItem('ycrm_plots'); // clear stale cache, cloud is source of truth
   try {
     const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
     if(plotsRes.ok){
       const cloudPlots = await plotsRes.json();
-      if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
-        plots = cloudPlots.map(p => ({
-          id: p.id,
-          sector: p.sector || '',
-          size: p.size || '',
-          price: p.price || '',
-          status: p.status || 'Available',
-          plotDescription: p.plot_description || ''
-        }));
-        localStorage.setItem('ycrm_plots', JSON.stringify(plots));
-        console.log('✅ Plots loaded from cloud:', plots.length);
-      }
+      // Always use cloud result (even empty array clears stale local plots)
+      plots = Array.isArray(cloudPlots) ? cloudPlots.map(p => ({
+        id: p.id,
+        sector: p.sector || '',
+        size: p.size || '',
+        price: p.price || '',
+        status: p.status || 'Available',
+        plotDescription: p['plot description'] || p['plot_description'] || ''
+      })) : [];
+      localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+      console.log('✅ Plots from cloud:', plots.length);
     }
   } catch(e){ console.warn('loadPlots:', e.message); }
 }
@@ -1758,7 +1770,9 @@ function savePlotEdit(id){
   p.status=document.getElementById('plot-status-sel').value;
   p.price=document.getElementById('plot-price-inp').value;
   p.plotDescription=(document.getElementById('plot-desc-inp')||{}).value||p.plotDescription||'';
-  save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot updated!');
+  save();
+  pushSinglePlot(p);
+  closeModal('plotModal');renderPlots();showToast('✅ Plot updated!');
 }
 
 function deletePlot(id){
@@ -1784,8 +1798,11 @@ function openAddPlot(){
 function saveNewPlot(){
   const id=document.getElementById('np-id').value.trim();
   if(!id){showToast('Plot ID required','error');return;}
-  plots.push({id,sector:document.getElementById('np-sector').value,size:document.getElementById('np-size').value,price:document.getElementById('np-price').value,plotDescription:(document.getElementById('np-desc')||{}).value||'',status:document.getElementById('np-status').value});
-  save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot added!');
+  const newPlot = {id, sector:document.getElementById('np-sector').value, size:document.getElementById('np-size').value, price:document.getElementById('np-price').value, plotDescription:(document.getElementById('np-desc')||{}).value||'', status:document.getElementById('np-status').value};
+  plots.push(newPlot);
+  save();
+  pushSinglePlot(newPlot);
+  closeModal('plotModal');renderPlots();showToast('✅ Plot added!');
 }
 
 // ══════════════════════════════════════════
