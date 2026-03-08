@@ -1437,7 +1437,7 @@ function renderLeads(){
     ? ['All',...statusIds,'transferred']
     : currentRole==='manager'
     ? ['All',...statusIds,'transferred']
-    : ['All',...statusIds];
+    : ['All','fresh','callback','not_picked','switched_off','not_interested','interested'];
 
   // Executive call list progress header
   const execHeader = currentRole==='executive' ? (()=>{
@@ -1476,6 +1476,12 @@ function renderLeads(){
 function chipLabel(c){
   if(c==='All') return 'All';
   if(c==='transferred') return '🔄 Transferred';
+  if(c==='fresh')         return '🟢 Fresh';
+  if(c==='callback')      return '🔵 Callback';
+  if(c==='not_picked')    return '📵 Not Picked';
+  if(c==='switched_off')  return '📴 Switched Off';
+  if(c==='not_interested')return '❌ Not Interested';
+  if(c==='interested')    return '✅ Interested';
   const found = CRM_CONFIG.leadStatuses.find(x=>x.id===c);
   if(found) return found.label;
   return c;
@@ -1488,14 +1494,31 @@ function setFilter(f,el){
   renderLeadsList();
 }
 
+function outcomeDisplay(o){
+  const map = {
+    'not_picked':    {label:'Not Picked',    color:'#888'},
+    'switched_off':  {label:'Switched Off',  color:'#666'},
+    'not_interested':{label:'Not Interested',color:'#f05c5c'},
+    'interested':    {label:'Interested',    color:'#22c98a'},
+    'callback':      {label:'Callback',      color:'#4d8ef0'},
+  };
+  return map[o] || null;
+}
 function leadCardHTML(l){
+  // For executive cold data: show last outcome as badge if called, else show status
+  const od = (currentRole==='executive' && l.assignedRole==='executive' && l.lastOutcome)
+    ? outcomeDisplay(l.lastOutcome) : null;
+  const badgeStyle = od
+    ? `style="background:${od.color}22;color:${od.color};border:1px solid ${od.color}44;border-radius:20px;padding:3px 10px;font-size:.65rem;font-weight:700;white-space:nowrap"`
+    : `class="badge ${(l.status||'cold').toLowerCase().replace(/\s+/g,'-')}"`;
+  const badgeLabel = od ? od.label : (l.status||'Cold');
   return `<div class="lead-card" onclick="openLead('${l.id}')">
     <div class="lead-top">
       <div>
         <div class="lead-name">${l.name}</div>
         <div class="lead-phone">📞 ${l.phone}</div>
       </div>
-      <span class="badge ${l.status.toLowerCase()}">${l.status}</span>
+      <span ${badgeStyle}>${badgeLabel}</span>
     </div>
     <div class="lead-meta">
       <span class="lead-tag">📍 ${l.interest}</span>
@@ -1514,7 +1537,17 @@ function renderLeadsList(){
   const q=(document.getElementById('leadSearch')||{}).value||'';
   let src = myLeads();
   if(q) src=src.filter(l=>l.name.toLowerCase().includes(q.toLowerCase())||l.phone.includes(q));
-  if(leadFilter!=='All') src=src.filter(l=>l.status===leadFilter);
+  if(leadFilter!=='All'){
+    if(currentRole==='executive'){
+      // Executive filters by call outcome, not pipeline status
+      if(leadFilter==='fresh')
+        src = src.filter(l => !l.callCount || l.callCount===0);
+      else
+        src = src.filter(l => l.lastOutcome===leadFilter);
+    } else {
+      src = src.filter(l=>l.status===leadFilter);
+    }
+  }
 
   const el=document.getElementById('leads-list');
 
@@ -1536,11 +1569,11 @@ function renderLeadsList(){
 
     // Group by status
     const fresh         = src.filter(l => !l.callCount || l.callCount === 0);
-    const notPicked     = src.filter(l => l.callCount > 0 && (l.lastOutcome === 'not_picked' || l.lastOutcome === 'not picked' || l.status === 'Not Picked'));
-    const switchedOff   = src.filter(l => l.callCount > 0 && (l.lastOutcome === 'switched_off' || l.status === 'Switched Off'));
-    const callback      = src.filter(l => l.callCount > 0 && (l.lastOutcome === 'callback' || l.status === 'Callback'));
-    const notInterested = src.filter(l => l.callCount > 0 && (l.lastOutcome === 'not_interested' || l.lastOutcome === 'not-interested' || l.status === 'Not Interested'));
-    const interested    = src.filter(l => l.callCount > 0 && (l.lastOutcome === 'interested' || l.status === 'Interested'));
+    const notPicked     = src.filter(l => l.callCount > 0 && l.lastOutcome === 'not_picked');
+    const switchedOff   = src.filter(l => l.callCount > 0 && l.lastOutcome === 'switched_off');
+    const callback      = src.filter(l => l.callCount > 0 && l.lastOutcome === 'callback');
+    const notInterested = src.filter(l => l.callCount > 0 && l.lastOutcome === 'not_interested');
+    const interested    = src.filter(l => l.callCount > 0 && l.lastOutcome === 'interested');
     const other         = src.filter(l => l.callCount > 0
       && !notPicked.includes(l) && !switchedOff.includes(l)
       && !callback.includes(l) && !notInterested.includes(l)
