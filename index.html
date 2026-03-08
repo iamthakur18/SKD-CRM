@@ -854,25 +854,34 @@ async function pushSinglePlot(p){
       price: p.price || '',
       status: p.status || 'Available'
     };
+    // First try DELETE existing row then INSERT fresh (most reliable for upsert)
+    await fetch(SUPA_URL + '/rest/v1/plots?id=eq.' + encodeURIComponent(p.id), {
+      method: 'DELETE',
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
     const res = await fetch(SUPA_URL + '/rest/v1/plots', {
       method: 'POST',
       headers: {
         'apikey': SUPA_KEY,
         'Authorization': 'Bearer ' + SUPA_KEY,
         'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
+        'Prefer': 'return=representation'
       },
-      body: JSON.stringify(row)
+      body: JSON.stringify([row])
     });
     if(!res.ok){
       const err = await res.text();
       console.warn('pushSinglePlot error:', res.status, err);
-      showToast('❌ Plot sync failed: ' + res.status, 'error');
-    } else {
-      console.log('✅ Plot synced:', p.id);
-      showToast('☁️ Plot saved to all devices!');
+      showToast('❌ Plot sync failed: ' + err, 'error');
+      return false;
     }
-  } catch(e){ console.warn('pushSinglePlot exception:', e.message); showToast('❌ '+e.message,'error'); }
+    console.log('✅ Plot synced:', p.id);
+    return true;
+  } catch(e){
+    console.warn('pushSinglePlot exception:', e.message);
+    showToast('❌ ' + e.message, 'error');
+    return false;
+  }
 }
 
 async function pushPlots(){
@@ -1783,14 +1792,16 @@ function openPlot(id){
   document.getElementById('plotModal').classList.add('show');
 }
 
-function savePlotEdit(id){
-  const p=plots.find(x=>x.id===id);if(!p)return;
-  p.status=document.getElementById('plot-status-sel').value;
-  p.price=document.getElementById('plot-price-inp').value;
-  p.plotDescription=(document.getElementById('plot-desc-inp')||{}).value||p.plotDescription||'';
+async function savePlotEdit(id){
+  const p=plots.find(x=>x.id===id); if(!p) return;
+  p.status = document.getElementById('plot-status-sel').value;
+  p.price  = document.getElementById('plot-price-inp').value;
+  p.plotDescription = (document.getElementById('plot-desc-inp')||{}).value || p.plotDescription || '';
   save();
-  pushSinglePlot(p);
-  closeModal('plotModal');renderPlots();showToast('✅ Plot updated!');
+  closeModal('plotModal'); renderPlots();
+  showToast('⏳ Saving to cloud...');
+  const ok = await pushSinglePlot(p);
+  showToast(ok ? '✅ Plot updated on all devices!' : '⚠️ Saved locally, cloud sync failed');
 }
 
 function deletePlot(id){
@@ -1813,14 +1824,23 @@ function openAddPlot(){
   document.getElementById('plotModal').classList.add('show');
 }
 
-function saveNewPlot(){
-  const id=document.getElementById('np-id').value.trim();
-  if(!id){showToast('Plot ID required','error');return;}
-  const newPlot = {id, sector:document.getElementById('np-sector').value, size:document.getElementById('np-size').value, price:document.getElementById('np-price').value, plotDescription:(document.getElementById('np-desc')||{}).value||'', status:document.getElementById('np-status').value};
+async function saveNewPlot(){
+  const id = document.getElementById('np-id').value.trim();
+  if(!id){ showToast('Plot ID required','error'); return; }
+  const newPlot = {
+    id,
+    sector: document.getElementById('np-sector').value,
+    size: document.getElementById('np-size').value,
+    price: document.getElementById('np-price').value,
+    status: document.getElementById('np-status').value
+  };
   plots.push(newPlot);
   save();
-  pushSinglePlot(newPlot);
-  closeModal('plotModal');renderPlots();showToast('✅ Plot added!');
+  closeModal('plotModal');
+  renderPlots();
+  showToast('⏳ Saving plot to cloud...');
+  const ok = await pushSinglePlot(newPlot);
+  showToast(ok ? '✅ Plot added & synced to all devices!' : '⚠️ Plot saved locally, cloud sync failed');
 }
 
 // ══════════════════════════════════════════
@@ -3297,11 +3317,11 @@ function saveCall(){
       lead.status = 'Warm';
     } else if(outcome==='not_interested'){
       log.statusChanged = lead.status;
-      lead.status = 'Not Interested';
+      lead.status = 'Cold';  // stays Cold but lastOutcome marks it as not interested
     } else if(outcome==='not_picked'){
-      lead.status = 'Not Picked';
+      // stays as current status, lastOutcome handles grouping
     } else if(outcome==='switched_off'){
-      lead.status = 'Switched Off';
+      // stays as current status, lastOutcome handles grouping
     }
   }
   callLogs.push(log);
