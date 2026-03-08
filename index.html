@@ -677,16 +677,24 @@ async function loadAllLeadsFromCloud(){
   if(!supabaseReady) return [];
   try {
     const r = await db.from('leads').select('*');
-    if(r.error) throw r.error;
+    if(r.error){
+      console.warn('Supabase leads error:', r.error.message || JSON.stringify(r.error));
+      return [];
+    }
     if(r.data && r.data.length > 0){
-      const parsed = r.data.map(row => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+      const parsed = r.data.map(row => {
+        try { return typeof row.data === 'string' ? JSON.parse(row.data) : row.data; }
+        catch(e){ return null; }
+      }).filter(Boolean);
       console.log('✅ Loaded', parsed.length, 'leads from Supabase');
       return parsed;
     }
-    console.log('ℹ️ No leads in Supabase yet');
+    console.log('ℹ️ Supabase leads table empty');
     return [];
   } catch(e){
-    console.warn('loadAllLeadsFromCloud failed:', e);
+    // Note: DataCloneError in Claude preview = CORS restriction, works fine on Netlify
+    const msg = (e && e.message) ? e.message : String(e);
+    console.warn('loadAllLeadsFromCloud:', msg);
     return [];
   }
 }
