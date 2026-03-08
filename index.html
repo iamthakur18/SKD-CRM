@@ -1133,7 +1133,7 @@ async function doLogin(){
     }
     setTimeout(()=>{
       showToast('⚠️ Please change your password now!','error');
-      goPage('more', document.querySelector('.nav-btn[data-id="more"]')||document.querySelector('.nav-btn'));
+      goPage('more', document.querySelector('.nav-btn[data-page="more"]')||document.querySelector('.nav-btn'));
       setTimeout(()=>{ switchAdminTab('users'); }, 400);
     }, 1000);
   } else {
@@ -1271,7 +1271,7 @@ function renderDashboard(){
         + pending.map(l=>'<div class="transfer-card" onclick="openLead(\''+l.id+'\')">'
           +'<div class="transfer-label">Transferred Lead</div>'
           +'<div class="transfer-name">'+l.name+'</div>'
-          +'<div class="transfer-detail">&#x1F4DE; '+l.phone+' &middot; '+l.interest+'</div>'
+          +'<div class="transfer-detail">&#x1F4DE; '+l.phone+(l.interest&&l.interest!=='Not decided'?' &middot; '+l.interest:'')+'</div>'
           +'<div style="margin-top:8px"><span class="badge transferred">Pending Review</span></div>'
           +'</div>').join('');
     }
@@ -1374,7 +1374,7 @@ function renderDashboard(){
     const uncalled  = coldData.length - called;
     const generated = leads.filter(l=>l.generatedBy===currentUser&&l.assignedRole==='manager').length;
     execColdBanner = coldData.length > 0
-      ? '<div onclick="goPage(\'leads\',document.querySelector(\'.nav-btn[data-id=\\\"leads\\\"]\'))" style="background:linear-gradient(135deg,rgba(77,142,240,.12),rgba(34,201,138,.08));border:1.5px solid rgba(77,142,240,.3);border-radius:14px;padding:14px;margin-bottom:14px;cursor:pointer">'
+      ? '<div onclick="goPage(\'leads\',document.querySelector(\'.nav-btn[data-page=\\\"leads\\\"]\'))" style="background:linear-gradient(135deg,rgba(77,142,240,.12),rgba(34,201,138,.08));border:1.5px solid rgba(77,142,240,.3);border-radius:14px;padding:14px;margin-bottom:14px;cursor:pointer">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
         +'<div style="font-size:.85rem;font-weight:700;font-family:Syne,sans-serif">❄️ My Cold Data</div>'
         +'<span style="font-size:.72rem;color:var(--blue);font-weight:600">Tap to call →</span>'
@@ -1437,7 +1437,7 @@ function showLeadListModal(statusFilter, title){
               <div style="width:38px;height:38px;border-radius:50%;background:${sColor(l.status)}22;color:${sColor(l.status)};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0">${l.name[0]}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:.88rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.name}</div>
-                <div style="font-size:.72rem;color:var(--muted2)">📞 ${l.phone} · ${l.interest||''}</div>
+                <div style="font-size:.72rem;color:var(--muted2)">📞 ${l.phone}${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''}</div>
                 <div style="font-size:.68rem;color:var(--muted2)">${l.assigned||''} ${l.assignedRole==='executive'?'· ❄️ Cold':'· 🔥 Lead'}</div>
               </div>
               <span class="badge ${l.status.toLowerCase().replace(' ','-')}">${l.status}</span>
@@ -1533,6 +1533,45 @@ function outcomeDisplay(o){
   };
   return map[o] || null;
 }
+
+// ══════════════════════════════════════════
+//  WHATSAPP AUTO MESSAGE
+// ══════════════════════════════════════════
+function sendWhatsApp(leadId){
+  const l = leads.find(x => x.id === leadId);
+  if(!l){ showToast('Lead not found','error'); return; }
+
+  const isFirstCall = !l.callCount || l.callCount === 0;
+  let message;
+
+  if(isFirstCall){
+    // Auto intro message for first contact
+    message =
+`*SKD PROPWORLD PVT LTD*
+Dear Sir/Mam
+We are dealing in Yamuna Authority Residential or industrial plots
+(Near Yamuna Expressway) Or Greater Noida
+If you are interested for *sale* & *purchase* any kind of plot kindly confirm me.
+
+🏭 *OFFICE LOCATION*
+*SKD PROPWORLD PVT LTD*
+*7th & 8th Floor*
+*Kaisons Alpha Square*
+*Alpha Commercial Belt*
+*Greater Noida ( G B Nagar )*
+*UP 201306*
+
+Best Regards
+${currentUser}`;
+  } else {
+    // Follow-up — let them compose manually
+    message = `Hi, this is ${currentUser} from SKD Propworld Pvt Ltd. `;
+  }
+
+  const phone = l.phone.replace(/\D/g,'');
+  const url = 'https://wa.me/91' + phone + '?text=' + encodeURIComponent(message);
+  window.open(url, '_blank');
+}
 function leadCardHTML(l){
   // For executive cold data: show last outcome as badge if called, else show status
   const od = (currentRole==='executive' && l.assignedRole==='executive' && l.lastOutcome)
@@ -1550,12 +1589,15 @@ function leadCardHTML(l){
       <span ${badgeStyle}>${badgeLabel}</span>
     </div>
     <div class="lead-meta">
-      <span class="lead-tag">📍 ${l.interest}</span>
+      ${(l.interest && l.interest!=='Not decided')?`<span class="lead-tag">📍 ${l.interest}</span>`:''}
       <span class="lead-tag">👤 ${l.assigned}</span>
       ${l.followup?`<span class="lead-tag">📅 ${l.followup}</span>`:''}
     </div>
     <div class="action-row">
       <button class="action-btn" onclick="event.stopPropagation();startAutoDial(['${l.phone}'])">📞 Dial</button>
+      <button class="action-btn" onclick="event.stopPropagation();sendWhatsApp('${l.id}')" style="background:rgba(37,211,102,.12);color:#25d366;border-color:rgba(37,211,102,.3)" title="${(!l.callCount||l.callCount===0)?'Send intro message':'Send WhatsApp'}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:2px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.524 5.854L0 24l6.336-1.503A11.946 11.946 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.8 9.8 0 01-5.03-1.382l-.36-.214-3.732.885.936-3.617-.235-.372A9.795 9.795 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>WA
+      </button>
       ${(currentRole!=='executive'||!l.assignedManager)?`<button class="action-btn primary" onclick="event.stopPropagation();openCallModal('${l.id}')">📋 Log</button>`:`<span style="flex:1;text-align:center;font-size:.68rem;color:var(--muted2);padding:8px 4px">👁️ Read-only · Assigned to ${l.assignedManager}</span>`}
       ${currentRole==='admin'?`<button class="action-btn" onclick="event.stopPropagation();deleteLead('${l.id}')">🗑️</button>`:''}
     </div>
@@ -3115,7 +3157,7 @@ function renderManagerPanel(){
         <div class="transfer-card" onclick="openLead('${l.id}')">
           <div class="transfer-label">🔥 Generated by ${l.generatedBy||'Executive'}</div>
           <div class="transfer-name">${l.name}</div>
-          <div class="transfer-detail">📞 ${l.phone} · ${l.interest} · <span class="badge ${l.status.toLowerCase()}">${l.status}</span></div>
+          <div class="transfer-detail">📞 ${l.phone} ${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''} · <span class="badge ${l.status.toLowerCase()}">${l.status}</span></div>
         </div>`).join('')
     }
   `;
@@ -3150,7 +3192,7 @@ function renderExecutivePanel(){
       <div class="transfer-card" onclick="openLead('${l.id}')">
         <div class="transfer-label">🔥 Lead sent to Manager: ${l.transferredTo||'—'}</div>
         <div class="transfer-name">${l.name}</div>
-        <div class="transfer-detail">${l.phone} · ${l.interest}</div>
+        <div class="transfer-detail">${l.phone} ${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''}</div>
       </div>`).join('')}`:''}
     ${active.length>0?`
     <div class="section-title">📞 Active Leads (${active.length})</div>
@@ -3158,7 +3200,7 @@ function renderExecutivePanel(){
     ${active.slice(0,10).map(l=>`
       <div class="lead-card" onclick="openLead('${l.id}')">
         <div class="lead-top">
-          <div><div class="lead-name">${l.name}</div><div class="lead-phone">${l.phone} · ${l.interest}</div></div>
+          <div><div class="lead-name">${l.name}</div><div class="lead-phone">${l.phone} ${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''}</div></div>
           <span class="badge ${l.status.toLowerCase()}" style="background:${sColor(l.status)}22;color:${sColor(l.status)}">${l.status}</span>
         </div>
         <div class="action-row">
@@ -3234,7 +3276,7 @@ function openLead(id){
     +'</div>'
     // Actions
     +(!isReadOnly?'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
-    +'<button class="action-btn primary" style="flex:2;min-width:100px" data-cid="'+id+'" onclick="openCallModal(this.dataset.cid);document.getElementById(&quot;leadModal&quot;).classList.remove(&quot;show&quot;)">&#x1F4CB; Log Call</button>'
+    +'<button style="flex:0 0 auto;background:rgba(37,211,102,.12);color:#25d366;border:1px solid rgba(37,211,102,.3);border-radius:10px;padding:8px 10px;font-size:.8rem;cursor:pointer" data-wid="'+id+'" onclick="sendWhatsApp(this.dataset.wid)">💬 WA</button>'+'<button class="action-btn primary" style="flex:2;min-width:100px" data-cid="'+id+'" onclick="openCallModal(this.dataset.cid);document.getElementById(&quot;leadModal&quot;).classList.remove(&quot;show&quot;)">&#x1F4CB; Log Call</button>'
     +(canClose?'<select data-sid="'+id+'" onchange="updateStatus(this.dataset.sid,this.value)" style="flex:1;min-width:100px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:DM Sans,sans-serif;font-size:.8rem;padding:8px"><option value="">Change Status</option>'+statusOpts+'</select>':'')
     +(canDelete?'<button class="action-btn" style="color:var(--red);border-color:var(--red)" data-did="'+id+'" onclick="deleteLead(this.dataset.did);closeModal(&quot;leadModal&quot;)">&#x1F5D1;&#xFE0F;</button>':'')
     +'</div>':'<div style="font-size:.75rem;color:var(--muted2);text-align:center;padding:10px;background:var(--card);border-radius:10px;margin-bottom:14px">👁️ Read-only view — this lead is managed by '+( l.assignedManager||'manager')+'</div>')
@@ -3549,7 +3591,7 @@ async function importLeads(){
     leads.push({
       id: newId, name: r.name.trim(), phone: r.phone.trim(), phone2: '',
       source: r.source || CRM_CONFIG.leadSources[0] || 'Purchased Data',
-      interest: r.interest || CRM_CONFIG.plotSizes[0] || 'Not decided',
+      interest: r.interest || 'Not decided',
       status: 'Cold', assigned: exec.name, assignedRole: 'executive',
       assignedManager: null, transferredTo: '',
       generatedBy: 'Bulk Upload', generatedByRole: 'admin',
