@@ -631,15 +631,20 @@ async function syncFromCloud(){
     }
     showSyncBanner('✅ Synced!', true);
 
-    // ── Refresh whichever page is currently active ──
+    // ── Refresh all active panels ──
     renderDashboard();
     if(document.getElementById('leads-list')) renderLeadsList();
     if(currentRole==='admin' && document.getElementById('admin-tab-content')) renderAdminPanel();
-    // For executive: pre-render leads page so data is ready when they tap My Calls
+    if(currentRole==='manager'){ renderManagerPanel && renderManagerPanel(); }
     if(currentRole==='executive'){
       const leadsPage = document.getElementById('page-leads');
       if(leadsPage && leadsPage.classList.contains('active')) renderLeads();
     }
+    // Re-render plots if plots page is active
+    const plotsPage = document.getElementById('page-plots');
+    if(plotsPage && plotsPage.classList.contains('active')) renderPlots();
+    // Also reload config (picks up any plot changes from admin)
+    await loadConfig();
 
   } catch(e){
     console.warn('Sync failed:', e);
@@ -844,6 +849,25 @@ async function pushConfig(){
     await db.from('app_users').upsert({id:'crm_config', data: JSON.stringify({config: CRM_CONFIG, stages: followupStages})}, {onConflict:'id'});
   } catch(e){ console.warn('pushConfig failed:', e); }
 }
+
+async function pushPlots(){
+  if(!supabaseReady) return;
+  try {
+    // Store all plots as one row in app_users for simplicity
+    const res = await fetch(SUPA_URL + '/rest/v1/app_users', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({id: 'plots_data', data: JSON.stringify(plots)})
+    });
+    if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
+    else console.log('✅ Plots pushed to cloud:', plots.length);
+  } catch(e){ console.warn('pushPlots error:', e.message); }
+}
 async function loadConfig(){
   if(!supabaseReady) return;
   try {
@@ -854,6 +878,24 @@ async function loadConfig(){
       if(parsed.stages) { followupStages = parsed.stages; localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
     }
   } catch(e){ console.warn('loadConfig:', e); }
+
+  // Load plots from cloud
+  try {
+    const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.plots_data&select=data', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    if(res.ok){
+      const rows = await res.json();
+      if(rows && rows.length > 0 && rows[0].data){
+        const cloudPlots = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+        if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
+          plots = cloudPlots;
+          localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+          console.log('✅ Plots loaded from cloud:', plots.length);
+        }
+      }
+    }
+  } catch(e){ console.warn('loadPlots:', e.message); }
 }
 
 // Geofence helper
@@ -998,12 +1040,32 @@ async function doLogin(){
   const name = document.getElementById('loginName').value.trim();
   document.getElementById('nameSuggestions').style.display = 'none';
   if(!name){ showToast('Please enter your name','error'); return; }
-  // find user in role — case-insensitive
-  const userObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
+
+  // Try to find user — if not found locally, sync from cloud first then retry
+  let userObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
+  if(!userObj){
+    showToast('🔄 Checking cloud...', '');
+    // Pull latest users from Supabase
+    try {
+      const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
+        headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+      });
+      if(res.ok){
+        const rows = await res.json();
+        if(rows && rows[0] && rows[0].data){
+          const parsed = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+          if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
+        }
+      }
+    } catch(e){ console.warn('User sync on login failed:', e.message); }
+    // Retry after cloud sync
+    userObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
+  }
+
   if(!userObj){
     const exists = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase());
     if(exists && !exists.active){ showToast('Account deactivated. Contact Admin.','error'); }
-    else { showToast('Name not found for this role','error'); }
+    else { showToast('Name not found. Ask admin to add your name.','error'); }
     return;
   }
   // First-time admin: hash-verified default credential
@@ -1080,6 +1142,7 @@ const NAV_CONFIG = {
     {id:'dashboard',icon:'🏠',label:'Home'},
     {id:'leads',icon:'📞',label:'My Calls'},
     {id:'add',icon:'➕',label:'Add Lead'},
+    {id:'plots',icon:'🏗️',label:'Plots'},
     {id:'more',icon:'📤',label:'Transfer'},
   ],
 };
@@ -1634,11 +1697,11 @@ function savePlotEdit(id){
   const p=plots.find(x=>x.id===id);if(!p)return;
   p.status=document.getElementById('plot-status-sel').value;
   p.price=document.getElementById('plot-price-inp').value;
-  save();closeModal('plotModal');renderPlots();showToast('Plot updated!');
+  save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot updated!');
 }
 
 function deletePlot(id){
-  if(confirm('Delete this plot?')){plots=plots.filter(p=>p.id!==id);save();closeModal('plotModal');renderPlots();showToast('Plot deleted');}
+  if(confirm('Delete this plot?')){plots=plots.filter(p=>p.id!==id);save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot deleted');}
 }
 
 function openAddPlot(){
@@ -1660,7 +1723,7 @@ function saveNewPlot(){
   const id=document.getElementById('np-id').value.trim();
   if(!id){showToast('Plot ID required','error');return;}
   plots.push({id,sector:document.getElementById('np-sector').value,size:document.getElementById('np-size').value,price:document.getElementById('np-price').value,status:document.getElementById('np-status').value});
-  save();closeModal('plotModal');renderPlots();showToast('Plot added!');
+  save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot added!');
 }
 
 // ══════════════════════════════════════════
@@ -3840,14 +3903,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     try{
       const s = JSON.parse(saved);
       if(s && s.user && s.role && USERS[s.role]){
-        const userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
+        let userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
+        // If not found locally, try cloud (admin may have added user after last sync)
+        if(!userObj && supabaseReady){
+          try {
+            const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
+              headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+            });
+            if(res.ok){
+              const rows = await res.json();
+              if(rows && rows[0] && rows[0].data){
+                const parsed = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+                if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
+              }
+            }
+          } catch(e){}
+          userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
+        }
         if(userObj){
           currentRole = s.role;
-          // Use exact name from USERS to prevent case mismatch
           currentUser = userObj.name;
           document.getElementById('loginScreen').style.display='none';
           document.getElementById('appShell').style.display='block';
-          document.getElementById('topName').textContent = s.user.split(' ')[0];
+          document.getElementById('topName').textContent = userObj.name.split(' ')[0];
           document.getElementById('topDate').textContent = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short'});
           const rb = document.getElementById('roleBadge');
           rb.textContent = s.role.charAt(0).toUpperCase()+s.role.slice(1);
