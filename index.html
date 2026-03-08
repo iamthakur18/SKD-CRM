@@ -1430,6 +1430,28 @@ function setFilter(f,el){
   renderLeadsList();
 }
 
+function leadCardHTML(l){
+  return `<div class="lead-card" onclick="openLead('${l.id}')">
+    <div class="lead-top">
+      <div>
+        <div class="lead-name">${l.name}</div>
+        <div class="lead-phone">📞 ${l.phone}</div>
+      </div>
+      <span class="badge ${l.status.toLowerCase()}">${l.status}</span>
+    </div>
+    <div class="lead-meta">
+      <span class="lead-tag">📍 ${l.interest}</span>
+      <span class="lead-tag">👤 ${l.assigned}</span>
+      ${l.followup?`<span class="lead-tag">📅 ${l.followup}</span>`:''}
+    </div>
+    <div class="action-row">
+      <button class="action-btn" onclick="event.stopPropagation();startAutoDial(['${l.phone}'])">📞 Dial</button>
+      ${(currentRole!=='executive'||!l.assignedManager)?`<button class="action-btn primary" onclick="event.stopPropagation();openCallModal('${l.id}')">📋 Log</button>`:`<span style="flex:1;text-align:center;font-size:.68rem;color:var(--muted2);padding:8px 4px">👁️ Read-only · Assigned to ${l.assignedManager}</span>`}
+      ${currentRole==='admin'?`<button class="action-btn" onclick="event.stopPropagation();deleteLead('${l.id}')">🗑️</button>`:''}
+    </div>
+  </div>`;
+}
+
 function renderLeadsList(){
   const q=(document.getElementById('leadSearch')||{}).value||'';
   let src = myLeads();
@@ -1437,42 +1459,48 @@ function renderLeadsList(){
   if(leadFilter!=='All') src=src.filter(l=>l.status===leadFilter);
 
   const el=document.getElementById('leads-list');
-  if(src.length===0){
+
+  // ── EXECUTIVE: split into Fresh vs Already Called ──
+  if(currentRole==='executive' && leadFilter==='All' && !q){
     const myNameLower = currentUser.toLowerCase().trim();
-    const isExecNoData = currentRole==='executive' && leads.filter(l=>(l.assigned||'').toLowerCase().trim()===myNameLower).length===0;
-    el.innerHTML = isExecNoData
-      ? `<div class="empty">
-          <div class="empty-icon">📭</div>
-          <div style="font-weight:700;margin-bottom:6px">No data assigned yet</div>
-          <div style="font-size:.78rem;color:var(--muted2);margin-bottom:14px">Ask your admin to upload and distribute cold data</div>
-          <div style="display:flex;gap:8px;justify-content:center">
-            <button onclick="syncFromCloud().then(()=>renderLeadsList())" style="background:var(--gold);color:#000;border:none;border-radius:10px;padding:10px 20px;font-size:.8rem;font-weight:700;cursor:pointer">🔄 Refresh</button>
-            <button onclick="showDebugInfo()" style="background:rgba(255,255,255,.08);color:var(--muted2);border:1px solid var(--border);border-radius:10px;padding:10px 20px;font-size:.8rem;cursor:pointer">🔍 Debug</button>
-          </div>
-        </div>`
-      : '<div class="empty"><div class="empty-icon">👥</div>No leads found</div>';
+    if(src.length===0 && leads.filter(l=>(l.assigned||'').toLowerCase().trim()===myNameLower).length===0){
+      el.innerHTML = `<div class="empty">
+        <div class="empty-icon">📭</div>
+        <div style="font-weight:700;margin-bottom:6px">No data assigned yet</div>
+        <div style="font-size:.78rem;color:var(--muted2);margin-bottom:14px">Ask your admin to upload and distribute cold data</div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button onclick="syncFromCloud().then(()=>renderLeadsList())" style="background:var(--gold);color:#000;border:none;border-radius:10px;padding:10px 20px;font-size:.8rem;font-weight:700;cursor:pointer">🔄 Refresh</button>
+          <button onclick="showDebugInfo()" style="background:rgba(255,255,255,.08);color:var(--muted2);border:1px solid var(--border);border-radius:10px;padding:10px 20px;font-size:.8rem;cursor:pointer">🔍 Debug</button>
+        </div>
+      </div>`;
+      return;
+    }
+    const fresh  = src.filter(l=>!l.callCount || l.callCount===0);
+    const called = src.filter(l=>l.callCount  && l.callCount > 0);
+    let html = '';
+    if(fresh.length){
+      html += `<div style="font-family:'Syne',sans-serif;font-size:.7rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:10px 0 8px;display:flex;align-items:center;gap:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>
+        Fresh — Not Called Yet (${fresh.length})
+      </div>`;
+      html += fresh.map(leadCardHTML).join('');
+    }
+    if(called.length){
+      html += `<div style="font-family:'Syne',sans-serif;font-size:.7rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;display:flex;align-items:center;gap:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--muted2);display:inline-block"></span>
+        Already Called (${called.length})
+      </div>`;
+      html += called.map(leadCardHTML).join('');
+    }
+    el.innerHTML = html || '<div class="empty"><div class="empty-icon">👥</div>No leads found</div>';
     return;
   }
-  el.innerHTML=src.map(l=>`
-    <div class="lead-card" onclick="openLead('${l.id}')">
-      <div class="lead-top">
-        <div>
-          <div class="lead-name">${l.name}</div>
-          <div class="lead-phone">📞 ${l.phone}</div>
-        </div>
-        <span class="badge ${l.status.toLowerCase()}">${l.status}</span>
-      </div>
-      <div class="lead-meta">
-        <span class="lead-tag">📍 ${l.interest}</span>
-        <span class="lead-tag">👤 ${l.assigned}</span>
-        ${l.followup?`<span class="lead-tag">📅 ${l.followup}</span>`:''}
-      </div>
-      <div class="action-row">
-        <button class="action-btn" onclick="event.stopPropagation();startAutoDial(['${l.phone}'])">📞 Dial</button>
-        ${(currentRole!=='executive'||!l.assignedManager)?`<button class="action-btn primary" onclick="event.stopPropagation();openCallModal('${l.id}')">📋 Log</button>`:`<span style="flex:1;text-align:center;font-size:.68rem;color:var(--muted2);padding:8px 4px">👁️ Read-only · Assigned to ${l.assignedManager}</span>`}
-        ${currentRole==='admin'?`<button class="action-btn" onclick="event.stopPropagation();deleteLead('${l.id}')">🗑️</button>`:''}
-      </div>
-    </div>`).join('');
+
+  if(src.length===0){
+    el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div>No leads found</div>';
+    return;
+  }
+  el.innerHTML = src.map(leadCardHTML).join('');
 }
 
 // ══════════════════════════════════════════
@@ -1748,12 +1776,14 @@ function renderAdminPanel(){
     {id:'team',label:'👥 Team'},
     {id:'users',label:'🔑 Users'},
     {id:'upload',label:'📤 Bulk Upload'},
+    {id:'reports',label:'📊 Reports'},
     {id:'integrations',label:'🔗 Integrations'},
     {id:'settings',label:'⚙️ Settings'},
   ];
   const content = adminTab==='team'?adminTeamHTML()
     :adminTab==='users'?adminUsersHTML()
     :adminTab==='upload'?adminUploadHTML()
+    :adminTab==='reports'?adminReportsHTML()
     :adminTab==='integrations'?adminIntHTML()
     :adminSettingsHTML();
 
@@ -1767,6 +1797,160 @@ function renderAdminPanel(){
 }
 
 function switchAdminTab(tab){adminTab=tab;renderAdminPanel();}
+
+function adminReportsHTML(){
+  const today = new Date().toISOString().slice(0,10);
+  const execs = USERS.executive.filter(u=>u.active);
+  const mgrs  = USERS.manager.filter(u=>u.active);
+
+  // ── Per-executive stats ──
+  const execRows = execs.map(e=>{
+    const myL   = leads.filter(l=>l.assigned===e.name && l.assignedRole==='executive');
+    const called = myL.filter(l=>l.callCount>0).length;
+    const fresh  = myL.filter(l=>!l.callCount||l.callCount===0).length;
+    const interested = myL.filter(l=>l.status==='Hot'||l.status==='Warm').length;
+    const todayC = callLogs.filter(c=>c.agent===e.name&&c.date===today).length;
+    const pct = myL.length ? Math.round(called/myL.length*100) : 0;
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif">${e.name}</div>
+        <span style="font-size:.62rem;font-weight:700;background:rgba(47,111,189,.1);color:var(--blue);border:1px solid rgba(47,111,189,.2);border-radius:10px;padding:2px 8px">Executive</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--text)">${myL.length}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Total</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--green)">${called}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Called</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--muted2)">${fresh}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Pending</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--gold)">${todayC}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Today</div>
+        </div>
+      </div>
+      <div style="background:var(--border);border-radius:20px;height:5px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:var(--green);border-radius:20px"></div>
+      </div>
+      <div style="font-size:.62rem;color:var(--muted);margin-top:3px">${pct}% coverage · ${interested} interested</div>
+    </div>`;
+  }).join('');
+
+  // ── Per-manager stats ──
+  const mgrRows = mgrs.map(m=>{
+    const myL    = leads.filter(l=>(l.assignedManager===m.name||l.transferredTo===m.name)&&l.assignedRole==='manager');
+    const hot    = myL.filter(l=>l.status==='Hot').length;
+    const warm   = myL.filter(l=>l.status==='Warm').length;
+    const closed = myL.filter(l=>l.status==='Closed').length;
+    const todayC = callLogs.filter(c=>c.agent===m.name&&c.date===today).length;
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif">${m.name}</div>
+        <span style="font-size:.62rem;font-weight:700;background:rgba(26,158,110,.1);color:var(--green);border:1px solid rgba(26,158,110,.2);border-radius:10px;padding:2px 8px">Manager</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px">
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--text)">${myL.length}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Leads</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--hot)">${hot}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Hot</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--green)">${closed}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Closed</div>
+        </div>
+        <div style="text-align:center;background:var(--bg);border-radius:8px;padding:6px">
+          <div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:var(--gold)">${todayC}</div>
+          <div style="font-size:.58rem;color:var(--muted)">Today</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;font-family:Syne,sans-serif;color:var(--gold)">${leads.length}</div>
+        <div style="font-size:.68rem;color:var(--muted)">Total Records</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;font-family:Syne,sans-serif;color:var(--green)">${callLogs.length}</div>
+        <div style="font-size:.68rem;color:var(--muted)">Total Calls Logged</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;font-family:Syne,sans-serif;color:var(--hot)">${leads.filter(l=>l.status==='Hot').length}</div>
+        <div style="font-size:.68rem;color:var(--muted)">Hot Leads</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center">
+        <div style="font-size:1.8rem;font-weight:800;font-family:Syne,sans-serif;color:var(--green)">${leads.filter(l=>l.status==='Closed').length}</div>
+        <div style="font-size:.68rem;color:var(--muted)">Closed Deals</div>
+      </div>
+    </div>
+
+    <div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📞 Executive Performance</div>
+    ${execRows || '<div style="color:var(--muted);font-size:.8rem;padding:10px 0">No executives yet</div>'}
+
+    <div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px">👔 Manager Performance</div>
+    ${mgrRows || '<div style="color:var(--muted);font-size:.8rem;padding:10px 0">No managers yet</div>'}
+
+    <div style="margin-top:16px">
+      <div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">⬇️ Download Reports</div>
+      <button onclick="exportFullReport()" class="btn-primary" style="margin-bottom:10px">📊 Download Full Report (CSV)</button>
+      <button onclick="exportCallReport()" class="btn-secondary" style="width:100%;margin-bottom:8px">📞 Download Call Logs (CSV)</button>
+      <button onclick="exportExecReport()" class="btn-secondary" style="width:100%">👥 Download Executive Summary (CSV)</button>
+    </div>
+  `;
+}
+
+function exportFullReport(){
+  const header = 'Name,Phone,Source,Interest,Status,Assigned To,Role,Manager,Calls Made,Follow-up,Notes,Created At\n';
+  const rows = leads.map(l=>
+    `"${l.name}","${l.phone}","${l.source||''}","${l.interest||''}","${l.status||''}","${l.assigned||''}","${l.assignedRole||''}","${l.assignedManager||''}","${l.callCount||0}","${l.followup||''}","${(l.notes||'').replace(/"/g,"'")}","${l.createdAt||''}"`
+  ).join('\n');
+  downloadCSV('skd_full_report_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  showToast('📊 Full report downloaded!');
+}
+
+function exportCallReport(){
+  const header = 'Date,Time,Agent,Customer,Phone,Outcome,Follow-up,Notes\n';
+  const rows = callLogs.map(c=>{
+    const lead = leads.find(l=>l.id===c.leadId);
+    return `"${c.date||''}","${c.time||''}","${c.agent||''}","${lead?lead.name:'Unknown'}","${lead?lead.phone:''}","${c.outcome||''}","${c.followup||''}","${(c.notes||'').replace(/"/g,"'")}"`;
+  }).join('\n');
+  downloadCSV('skd_call_logs_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  showToast('📞 Call log downloaded!');
+}
+
+function exportExecReport(){
+  const today = new Date().toISOString().slice(0,10);
+  const header = 'Executive,Total Assigned,Called,Pending,Today Calls,Interested,Coverage %\n';
+  const rows = USERS.executive.filter(u=>u.active).map(e=>{
+    const myL = leads.filter(l=>l.assigned===e.name&&l.assignedRole==='executive');
+    const called = myL.filter(l=>l.callCount>0).length;
+    const fresh  = myL.filter(l=>!l.callCount||l.callCount===0).length;
+    const interested = myL.filter(l=>l.status==='Hot'||l.status==='Warm').length;
+    const todayC = callLogs.filter(c=>c.agent===e.name&&c.date===today).length;
+    const pct = myL.length ? Math.round(called/myL.length*100) : 0;
+    return `"${e.name}","${myL.length}","${called}","${fresh}","${todayC}","${interested}","${pct}%"`;
+  }).join('\n');
+  downloadCSV('skd_exec_report_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  showToast('👥 Executive report downloaded!');
+}
+
+function downloadCSV(filename, content){
+  const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
 
 function adminTeamHTML(){
   // ── LEADS TABLE with delete ──
