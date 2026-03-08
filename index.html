@@ -529,20 +529,31 @@ function initSupabase(){
 
 // Safe Supabase wrapper — never crashes, falls back to localStorage
 async function dbGet(table){
-  if(!supabaseReady || !db) return null;
+  if(!supabaseReady) return null;
   try {
-    const {data, error} = await db.from(table).select('*');
-    if(error) throw error;
-    return data;
-  } catch(e){ console.warn('dbGet failed:', table, e); return null; }
+    const res = await fetch(SUPA_URL + '/rest/v1/' + table + '?select=*', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    if(!res.ok){ console.warn('dbGet failed:', table, res.status); return null; }
+    return await res.json();
+  } catch(e){ console.warn('dbGet failed:', table, e.message); return null; }
 }
 
 async function dbUpsert(table, row){
-  if(!supabaseReady || !db) return;
+  if(!supabaseReady) return;
   try {
-    const {error} = await db.from(table).upsert(row, {onConflict:'id'});
-    if(error) throw error;
-  } catch(e){ console.warn('dbUpsert failed:', table, e); }
+    const res = await fetch(SUPA_URL + '/rest/v1/' + table, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(row)
+    });
+    if(!res.ok){ console.warn('dbUpsert failed:', table, res.status); }
+  } catch(e){ console.warn('dbUpsert failed:', table, e.message); }
 }
 async function loadUsersFromCloud(){
   try{
@@ -615,15 +626,15 @@ async function syncFromCloud(){
         localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
       }
     }
-    // ── USERS ──
-    const cloudUsers = await dbGet('app_users');
-    if(cloudUsers && cloudUsers.length > 0){
-      const usersRow = cloudUsers.find(r => r.id === 'users');
-      if(usersRow && usersRow.data){
-        const parsed = typeof usersRow.data==='string' ? JSON.parse(usersRow.data) : usersRow.data;
-        const cloudTotal = (parsed.admin||[]).length + (parsed.manager||[]).length + (parsed.executive||[]).length;
-        const localTotal  = (USERS.admin||[]).length  + (USERS.manager||[]).length  + (USERS.executive||[]).length;
-        if(parsed && parsed.admin && cloudTotal >= localTotal){
+    // ── USERS (plain fetch) ──
+    const syncUsersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    if(syncUsersRes.ok){
+      const syncUsersRows = await syncUsersRes.json();
+      if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
+        const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
+        if(parsed && parsed.admin){
           USERS = parsed;
           localStorage.setItem('ycrm_users', JSON.stringify(USERS));
         }
@@ -746,7 +757,7 @@ async function pushCallLog(log){
 async function pushUsers(){
   if(!supabaseReady){ console.warn('pushUsers: Supabase not ready'); return; }
   try {
-    const {error} = await db.from('app_users').upsert({id:'users', data: JSON.stringify(USERS)}, {onConflict:'id'});
+    await dbUpsert('app_users', {id:'users', data: JSON.stringify(USERS)});
     if(error) throw error;
     console.log('✅ pushUsers OK — managers:', USERS.manager.length, 'executives:', USERS.executive.length);
   } catch(e){ console.error('❌ pushUsers FAILED:', e); }
@@ -846,7 +857,7 @@ function saveConfig(){
 async function pushConfig(){
   if(!supabaseReady) return;
   try {
-    await db.from('app_users').upsert({id:'crm_config', data: JSON.stringify({config: CRM_CONFIG, stages: followupStages})}, {onConflict:'id'});
+    await dbUpsert('app_users', {id:'crm_config', data: JSON.stringify({config: CRM_CONFIG, stages: followupStages})});
   } catch(e){ console.warn('pushConfig failed:', e); }
 }
 
@@ -871,9 +882,13 @@ async function pushPlots(){
 async function loadConfig(){
   if(!supabaseReady) return;
   try {
-    const {data} = await db.from('app_users').select('*').eq('id','crm_config').single();
-    if(data && data.data){
-      const parsed = typeof data.data==='string' ? JSON.parse(data.data) : data.data;
+    const lcRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.crm_config&select=data', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    const lcRows = lcRes.ok ? await lcRes.json() : [];
+    const lcRow = lcRows && lcRows[0];
+    if(lcRow && lcRow.data){
+      const parsed = typeof lcRow.data==='string' ? JSON.parse(lcRow.data) : lcRow.data;
       if(parsed.config) { CRM_CONFIG = parsed.config; localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG)); }
       if(parsed.stages) { followupStages = parsed.stages; localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
     }
@@ -3402,12 +3417,14 @@ async function loadFromFirebase() {
   }
 
   try {
-    // Step 2: Load users
-    const cloudUsers = await db.from('app_users').select('*');
-    if(cloudUsers.data && cloudUsers.data.length > 0){
-      const row = cloudUsers.data.find(r => r.id === 'users');
-      if(row && row.data){
-        const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+    // Step 2: Load users via plain fetch (avoids DataCloneError from Supabase JS client)
+    const usersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    if(usersRes.ok){
+      const usersRows = await usersRes.json();
+      if(usersRows && usersRows.length > 0 && usersRows[0].data){
+        const parsed = typeof usersRows[0].data === 'string' ? JSON.parse(usersRows[0].data) : usersRows[0].data;
         if(parsed && parsed.admin){
           USERS = parsed;
           localStorage.setItem('ycrm_users', JSON.stringify(USERS));
@@ -3794,7 +3811,10 @@ async function factoryReset(){
       showToast('🔄 Clearing cloud data...');
       await db.from('call_logs').delete().neq('id','__none__');
       await db.from('leads').delete().neq('id','__none__');
-      await db.from('app_users').delete().neq('id','__none__');
+      await fetch(SUPA_URL + '/rest/v1/app_users?id=neq.__none__', {
+        method: 'DELETE',
+        headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+      });
       leads=[]; callLogs=[];
       USERS={admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2025-01-01'}],manager:[],executive:[]};
       await pushUsers();
