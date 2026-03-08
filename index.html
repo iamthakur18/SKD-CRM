@@ -1722,6 +1722,7 @@ function renderPlots(){
           <div class="plot-size">${p.size}</div>
           <div class="plot-sector">${p.sector}</div>
           <div class="plot-price">${p.price}</div>
+          ${p.plotDescription ? `<div style="font-size:.68rem;color:var(--muted2);margin-top:4px;line-height:1.3">${p.plotDescription}</div>` : ''}
           <div style="margin-top:7px"><span class="status-dot ${p.status.toLowerCase()}"></span><span style="font-size:.7rem;color:var(--muted2)">${p.status}</span></div>
         </div>`).join('')}
     </div>
