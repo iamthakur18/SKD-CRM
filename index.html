@@ -1475,8 +1475,24 @@ function renderLeadsList(){
       </div>`;
       return;
     }
-    const fresh  = src.filter(l=>!l.callCount || l.callCount===0);
-    const called = src.filter(l=>l.callCount  && l.callCount > 0);
+     const fresh  = src.filter(l=>!l.callCount || l.callCount===0);
+     const called = src.filter(l=>l.callCount  && l.callCount > 0);
+    // Some records can have stale/missing callCount or mismatched leadId in logs after sync.
+    // Treat those as already-called so outcomes like Switched Off / Not Interested
+    // never remain in the Fresh bucket.
+    const normalizePhone = (v)=>(v||'').toString().replace(/\D/g,'').slice(-10);
+    const calledLeadIds = new Set(callLogs.map(c=>c.leadId).filter(Boolean));
+    const leadPhoneById = new Map(leads.map(l=>[l.id, normalizePhone(l.phone)]));
+    const calledPhones = new Set(
+      callLogs.map(c=>leadPhoneById.get(c.leadId)||'').filter(Boolean)
+    );
+    const hasBeenCalled = (lead)=>{
+      const count = Number(lead.callCount||0);
+      const phone = normalizePhone(lead.phone);
+      return count > 0 || calledLeadIds.has(lead.id) || (phone && calledPhones.has(phone));
+    };
+    const fresh  = src.filter(l=>!hasBeenCalled(l));
+    const called = src.filter(l=> hasBeenCalled(l));
     let html = '';
     if(fresh.length){
       html += `<div style="font-family:'Syne',sans-serif;font-size:.7rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin:10px 0 8px;display:flex;align-items:center;gap:6px">
