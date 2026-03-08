@@ -661,15 +661,41 @@ function showSyncBanner(msg, fadeOut=false){
 async function pushLead(lead){
   if(!supabaseReady) return;
   lead.updatedAt = new Date().toISOString();
-  await dbUpsert('leads', {id: lead.id, data: JSON.stringify(lead), updated_at: new Date().toISOString()});
+  const {error} = await db.from('leads').upsert(
+    {id: lead.id, data: JSON.stringify(lead), updated_at: lead.updatedAt},
+    {onConflict: 'id'}
+  );
+  if(error) console.warn('pushLead failed for', lead.id, ':', error.message, error.code);
 }
 
-// ── Push all new leads to Supabase (staggered to avoid write collision) ──
+// ── Push ALL leads to Supabase in one batch ──
 async function saveAllLeadsToCloud(){
-  if(!supabaseReady) return;
-  leads.forEach((l, i) => {
-    setTimeout(() => pushLead(l).catch(e => console.warn('pushLead failed:', e)), i * 20);
-  });
+  if(!supabaseReady){ showToast('Supabase not connected','error'); return; }
+  showToast('⬆️ Syncing ' + leads.length + ' leads to cloud...');
+  try {
+    // Batch upsert in groups of 50
+    const chunks = [];
+    for(let i = 0; i < leads.length; i += 50) chunks.push(leads.slice(i, i+50));
+    let pushed = 0;
+    for(const chunk of chunks){
+      const rows = chunk.map(l => {
+        l.updatedAt = new Date().toISOString();
+        return {id: l.id, data: JSON.stringify(l), updated_at: l.updatedAt};
+      });
+      const {error} = await db.from('leads').upsert(rows, {onConflict: 'id'});
+      if(error){
+        console.warn('Batch upsert error:', error.message, error.code, error.hint);
+        showToast('❌ Push failed: ' + error.message, 'error');
+        return;
+      }
+      pushed += chunk.length;
+    }
+    console.log('✅ Pushed', pushed, 'leads to Supabase');
+    showToast('✅ ' + pushed + ' leads synced to cloud!');
+  } catch(e){
+    console.warn('saveAllLeadsToCloud error:', e.message || e);
+    showToast('❌ Sync error: ' + (e.message||e), 'error');
+  }
 }
 
 // ── Load all leads directly from Supabase leads table ──
@@ -2130,7 +2156,8 @@ function adminUploadHTML(){
     </div>
     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(this)">
     <div id="uploadPreview"></div>
-    <button class="btn-secondary" onclick="downloadTemplate()" style="width:100%;margin-bottom:14px">⬇️ Download CSV Template</button>
+    <button class="btn-secondary" onclick="downloadTemplate()" style="width:100%;margin-bottom:8px">⬇️ Download CSV Template</button>
+    <button onclick="saveAllLeadsToCloud()" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(34,201,138,.4);background:rgba(34,201,138,.08);color:var(--green);font-weight:700;font-size:.82rem;cursor:pointer;margin-bottom:14px">☁️ Force Sync All Leads to Cloud (${leads.length} leads)</button>
 
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
       <div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;margin-bottom:10px">📊 Data Overview</div>
@@ -3079,7 +3106,7 @@ function importLeads(){
   localStorage.setItem('ycrm_leads', JSON.stringify(leads));
   localStorage.setItem('ycrm_lastupload', new Date().toLocaleDateString('en-IN'));
 
-  // Push ALL leads as a single bulk save — one write, instant read on other devices
+  // Push ALL leads to Supabase as a batch (not staggered — batch is reliable)
   saveAllLeadsToCloud();
 
   // Show distribution breakdown
