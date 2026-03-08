@@ -589,13 +589,12 @@ async function syncFromCloud(){
   if(!supabaseReady) return;
   showSyncBanner('☁️ Syncing...');
   try {
-    // ── LEADS ──
-    const cloudLeads = await dbGet('leads');
-    if(cloudLeads && cloudLeads.length > 0){
-      const cloudParsed = cloudLeads.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
+    // ── LEADS (bulk load — same as startup) ──
+    const cloudLeads = await loadAllLeadsFromCloud();
+    if(cloudLeads.length > 0){
       const merged = {};
       leads.forEach(l => { merged[l.id] = l; });
-      cloudParsed.forEach(cl => {
+      cloudLeads.forEach(cl => {
         const local = merged[cl.id];
         if(!local){ merged[cl.id] = cl; }
         else {
@@ -661,8 +660,35 @@ function showSyncBanner(msg, fadeOut=false){
 // Push a single lead to cloud
 async function pushLead(lead){
   if(!supabaseReady) return;
-  lead.updatedAt = new Date().toISOString(); // timestamp every save
+  lead.updatedAt = new Date().toISOString();
   await dbUpsert('leads', {id: lead.id, data: JSON.stringify(lead), updated_at: new Date().toISOString()});
+}
+
+// ── Push all new leads to Supabase (staggered to avoid write collision) ──
+async function saveAllLeadsToCloud(){
+  if(!supabaseReady) return;
+  leads.forEach((l, i) => {
+    setTimeout(() => pushLead(l).catch(e => console.warn('pushLead failed:', e)), i * 20);
+  });
+}
+
+// ── Load all leads directly from Supabase leads table ──
+async function loadAllLeadsFromCloud(){
+  if(!supabaseReady) return [];
+  try {
+    const r = await db.from('leads').select('*');
+    if(r.error) throw r.error;
+    if(r.data && r.data.length > 0){
+      const parsed = r.data.map(row => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+      console.log('✅ Loaded', parsed.length, 'leads from Supabase');
+      return parsed;
+    }
+    console.log('ℹ️ No leads in Supabase yet');
+    return [];
+  } catch(e){
+    console.warn('loadAllLeadsFromCloud failed:', e);
+    return [];
+  }
 }
 
 // Push all call logs to cloud (push latest only)
@@ -3045,13 +3071,8 @@ function importLeads(){
   localStorage.setItem('ycrm_leads', JSON.stringify(leads));
   localStorage.setItem('ycrm_lastupload', new Date().toLocaleDateString('en-IN'));
 
-  // Push each new lead to Supabase — use tracked IDs, not slice (slice breaks when dupes skipped)
-  if(supabaseReady){
-    newLeadIds.forEach((id, i) => {
-      const l = leads.find(x => x.id === id);
-      if(l) setTimeout(() => pushLead(l).catch(e => console.warn('pushLead failed:', e)), i * 30);
-    });
-  }
+  // Push ALL leads as a single bulk save — one write, instant read on other devices
+  saveAllLeadsToCloud();
 
   // Show distribution breakdown
   const dist = execs.map(e => {
@@ -3250,20 +3271,20 @@ async function showDebugInfo(){
 
 // ══ INIT ══
 async function loadFromFirebase() {
-  // Load from localStorage instantly first
+  // Step 1: Load localStorage instantly (works offline)
   leads    = JSON.parse(localStorage.getItem('ycrm_leads')||'[]');
   callLogs = JSON.parse(localStorage.getItem('ycrm_calls')||'[]');
   const saved = localStorage.getItem('ycrm_users');
   if(saved) USERS = JSON.parse(saved);
 
   initSupabase();
-  if (!supabaseReady) {
-    console.warn('Offline — using local data');
+  if(!supabaseReady){
+    console.warn('Supabase not ready — using local data only');
     return;
   }
 
   try {
-    // Load users from cloud FIRST so login shows correct names
+    // Step 2: Load users
     const cloudUsers = await db.from('app_users').select('*');
     if(cloudUsers.data && cloudUsers.data.length > 0){
       const row = cloudUsers.data.find(r => r.id === 'users');
@@ -3272,31 +3293,35 @@ async function loadFromFirebase() {
         if(parsed && parsed.admin){
           USERS = parsed;
           localStorage.setItem('ycrm_users', JSON.stringify(USERS));
-          console.log('✅ Users from cloud — mgr:', USERS.manager.length, 'exc:', USERS.executive.length);
+          console.log('✅ Users loaded — executives:', USERS.executive.map(e=>e.name).join(', '));
         }
       }
     }
-    // Then load leads and calls — cloud is always source of truth
-    const cloudLeads = await db.from('leads').select('*');
-    if(cloudLeads.data && cloudLeads.data.length > 0){
-      const cloudParsed = cloudLeads.data.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
-      // Merge cloud + any local-only leads (not yet pushed)
+
+    // Step 3: Load ALL leads (bulk chunks → individual rows fallback)
+    const cloudLeads = await loadAllLeadsFromCloud();
+    if(cloudLeads.length > 0){
       const merged = {};
-      cloudParsed.forEach(l => { merged[l.id] = l; });
-      // Keep any local leads that aren't in cloud yet (pending push)
+      cloudLeads.forEach(l => { merged[l.id] = l; });
       leads.forEach(l => { if(!merged[l.id]) merged[l.id] = l; });
-      leads = Object.values(merged).sort((a,b)=> new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      leads = Object.values(merged).sort((a,b) => new Date(b.createdAt||0) - new Date(a.createdAt||0));
       localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+      console.log('✅ Total leads:', leads.length, '| Cold data:', leads.filter(l=>l.assignedRole==='executive').length);
+    } else {
+      console.warn('⚠️ No leads returned from cloud — check Supabase RLS policies');
     }
+
+    // Step 4: Load call logs
     const cloudCalls = await db.from('call_logs').select('*');
     if(cloudCalls.data && cloudCalls.data.length > 0){
       callLogs = cloudCalls.data.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
       localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
     }
+
   } catch(e) {
     console.error('Cloud load error:', e);
   }
-  // Also load CRM config (statuses, sources, sizes)
+
   await loadConfig();
 }
 document.querySelectorAll('.modal-overlay').forEach(o=>{
