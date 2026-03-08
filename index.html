@@ -1868,8 +1868,24 @@ async function savePlotEdit(id){
   showToast(ok ? '✅ Plot updated on all devices!' : '⚠️ Saved locally, cloud sync failed');
 }
 
-function deletePlot(id){
-  if(confirm('Delete this plot?')){plots=plots.filter(p=>p.id!==id);save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot deleted');}
+async function deletePlot(id){
+  if(!confirm('Delete this plot?')) return;
+  plots = plots.filter(p => p.id !== id);
+  save();
+  closeModal('plotModal');
+  renderPlots();
+  showToast('Deleting from cloud...');
+  try {
+    await fetch(SUPA_URL + '/rest/v1/plots?id=eq.' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    await syncPlotsFromCloud();
+    renderPlots();
+    showToast('Plot deleted from all devices!');
+  } catch(e){
+    showToast('Deleted locally, cloud sync failed', 'error');
+  }
 }
 
 function openAddPlot(){
