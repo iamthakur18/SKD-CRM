@@ -527,32 +527,21 @@ function initSupabase(){
   }
 }
 
-// Safe Supabase wrapper — never crashes, falls back to localStorage
+// Safe Supabase wrapper — uses JS client, never crashes
 async function dbGet(table){
   if(!supabaseReady) return null;
   try {
-    const res = await fetch(SUPA_URL + '/rest/v1/' + table + '?select=*', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(!res.ok){ console.warn('dbGet failed:', table, res.status); return null; }
-    return await res.json();
+    const { data, error } = await db.from(table).select('*');
+    if(error){ console.warn('dbGet failed:', table, error.message); return null; }
+    return data;
   } catch(e){ console.warn('dbGet failed:', table, e.message); return null; }
 }
 
 async function dbUpsert(table, row){
   if(!supabaseReady) return;
   try {
-    const res = await fetch(SUPA_URL + '/rest/v1/' + table, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify(row)
-    });
-    if(!res.ok){ console.warn('dbUpsert failed:', table, res.status); }
+    const { error } = await db.from(table).upsert(row, { onConflict: 'id' });
+    if(error){ console.warn('dbUpsert failed:', table, error.message); }
   } catch(e){ console.warn('dbUpsert failed:', table, e.message); }
 }
 async function loadUsersFromCloud(){
@@ -626,19 +615,11 @@ async function syncFromCloud(){
         localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
       }
     }
-    // ── USERS (plain fetch) ──
-    const syncUsersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(syncUsersRes.ok){
-      const syncUsersRows = await syncUsersRes.json();
-      if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
-        const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
-        if(parsed && parsed.admin){
-          USERS = parsed;
-          localStorage.setItem('ycrm_users', JSON.stringify(USERS));
-        }
-      }
+    // ── USERS ──
+    const { data: syncUsersRows } = await db.from('app_users').select('data').eq('id','users');
+    if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
+      const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
+      if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
     }
     showSyncBanner('✅ Synced!', true);
 
@@ -718,19 +699,8 @@ async function saveAllLeadsToCloud(){
 async function loadAllLeadsFromCloud(){
   if(!supabaseReady) return [];
   try {
-    // Use plain fetch instead of Supabase client to avoid DataCloneError
-    const res = await fetch(SUPA_URL + '/rest/v1/leads?select=*', {
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    if(!res.ok){
-      console.warn('leads fetch failed:', res.status, res.statusText);
-      return [];
-    }
-    const data = await res.json();
+    const { data, error } = await db.from('leads').select('*');
+    if(error){ console.warn('loadAllLeadsFromCloud error:', error.message); return []; }
     if(data && data.length > 0){
       const parsed = data.map(row => {
         try { return typeof row.data === 'string' ? JSON.parse(row.data) : row.data; }
@@ -739,7 +709,6 @@ async function loadAllLeadsFromCloud(){
       console.log('✅ Loaded', parsed.length, 'leads from Supabase');
       return parsed;
     }
-    console.log('ℹ️ Supabase leads table empty');
     return [];
   } catch(e){
     console.warn('loadAllLeadsFromCloud:', e.message || e);
@@ -780,27 +749,20 @@ function startRealtimeSync(){
 async function syncPlotsFromCloud(){
   if(!supabaseReady) return;
   try {
-    const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    if(plotsRes.ok){
-      const cloudPlots = await plotsRes.json();
-      if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
-        plots = cloudPlots.map(p => ({
-          id: p.id,
-          sector: p.sector || '',
-          size: p.size || '',
-          price: p.price || '',
-          status: p.status || 'Available',
-          plotDescription: p['plot description'] || p['plot_description'] || ''
-        }));
-        localStorage.setItem('ycrm_plots', JSON.stringify(plots));
-        console.log('🔄 Plots synced from cloud:', plots.length);
-        // Re-render plots page if it's currently visible
-        const plotPage = document.getElementById('page-plots');
-        if(plotPage && plotPage.classList.contains('active')) renderPlots();
-      }
-    }
+    const { data: cloudPlots, error } = await db.from('plots').select('*');
+    if(error){ console.warn('syncPlotsFromCloud error:', error.message); return; }
+    plots = Array.isArray(cloudPlots) ? cloudPlots.map(p => ({
+      id: p.id,
+      sector: p.sector || '',
+      size: p.size || '',
+      price: p.price || '',
+      status: p.status || 'Available',
+      plotDescription: p['plot description'] || p['plot_description'] || ''
+    })) : [];
+    localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+    console.log('🔄 Plots synced from cloud:', plots.length);
+    const plotPage = document.getElementById('page-plots');
+    if(plotPage && plotPage.classList.contains('active')) renderPlots();
   } catch(e){ console.warn('syncPlotsFromCloud error:', e.message); }
 }
 
@@ -883,20 +845,20 @@ async function pushConfig(){
 
 // Upsert a single plot to Supabase (insert if new, update if exists)
 async function pushSinglePlot(p){
-  if(!supabaseReady) return;
-  const row = {
-    id: p.id,
-    sector: p.sector || '',
-    size: p.size || '',
-    price: p.price || '',
-    status: p.status || 'Available',
-    'plot description': p.plotDescription || ''
-  };
+  if(!supabaseReady){ showToast('⚠️ Not connected to cloud','error'); return; }
   try {
+    const row = {
+      id: p.id,
+      sector: p.sector || '',
+      size: p.size || '',
+      price: p.price || '',
+      status: p.status || 'Available',
+      'plot description': p.plotDescription || ''
+    };
     const { error } = await db.from('plots').upsert(row, { onConflict: 'id' });
-    if(error){ console.warn('pushSinglePlot error:', error.message, error); showToast('❌ Cloud save failed: ' + error.message, 'error'); }
-    else { console.log('✅ Plot upserted to cloud:', p.id); }
-  } catch(e){ console.warn('pushSinglePlot exception:', e.message); }
+    if(error){ console.warn('pushSinglePlot error:', error); showToast('❌ ' + error.message, 'error'); }
+    else { console.log('✅ Plot synced:', p.id); showToast('☁️ Plot saved to all devices!'); }
+  } catch(e){ console.warn('pushSinglePlot exception:', e.message); showToast('❌ '+e.message,'error'); }
 }
 
 async function pushPlots(){
@@ -907,10 +869,7 @@ async function pushPlots(){
 async function loadConfig(){
   if(!supabaseReady) return;
   try {
-    const lcRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.crm_config&select=data', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    const lcRows = lcRes.ok ? await lcRes.json() : [];
+    const { data: lcRows } = await db.from('app_users').select('data').eq('id','crm_config');
     const lcRow = lcRows && lcRows[0];
     if(lcRow && lcRow.data){
       const parsed = typeof lcRow.data==='string' ? JSON.parse(lcRow.data) : lcRow.data;
@@ -919,15 +878,12 @@ async function loadConfig(){
     }
   } catch(e){ console.warn('loadConfig:', e); }
 
-  // Load plots directly from plots table — cloud ALWAYS overrides local cache
-  localStorage.removeItem('ycrm_plots'); // clear stale cache, cloud is source of truth
+  // Load plots via Supabase JS client (avoids CORS/fetch issues)
+  localStorage.removeItem('ycrm_plots');
   try {
-    const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    if(plotsRes.ok){
-      const cloudPlots = await plotsRes.json();
-      // Always use cloud result (even empty array clears stale local plots)
+    const { data: cloudPlots, error: plotsErr } = await db.from('plots').select('*');
+    if(plotsErr){ console.warn('loadPlots error:', plotsErr.message); }
+    else {
       plots = Array.isArray(cloudPlots) ? cloudPlots.map(p => ({
         id: p.id,
         sector: p.sector || '',
@@ -1091,15 +1047,10 @@ async function doLogin(){
     showToast('🔄 Checking cloud...', '');
     // Pull latest users from Supabase
     try {
-      const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
-        headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-      });
-      if(res.ok){
-        const rows = await res.json();
-        if(rows && rows[0] && rows[0].data){
-          const parsed = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
-          if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
-        }
+      const { data: loginUserRows } = await db.from('app_users').select('data').eq('id','users');
+      if(loginUserRows && loginUserRows[0] && loginUserRows[0].data){
+        const parsed = typeof loginUserRows[0].data==='string' ? JSON.parse(loginUserRows[0].data) : loginUserRows[0].data;
+        if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
       }
     } catch(e){ console.warn('User sync on login failed:', e.message); }
     // Retry after cloud sync
@@ -3245,20 +3196,10 @@ async function importLeads(){
         return {id: l.id, data: JSON.stringify(l)};
       }).filter(Boolean);
 
-      const res = await fetch(SUPA_URL + '/rest/v1/leads', {
-        method: 'POST',
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(rows)
-      });
-      if(!res.ok){
-        const err = await res.text();
-        console.error('Supabase push error:', res.status, err);
-        showToast('❌ Cloud push failed: ' + res.status + ' ' + err, 'error');
+      const { error: chunkErr } = await db.from('leads').upsert(rows, { onConflict: 'id' });
+      if(chunkErr){
+        console.error('Supabase push error:', chunkErr.message);
+        showToast('❌ Cloud push failed: ' + chunkErr.message, 'error');
         return;
       }
     }
@@ -3458,19 +3399,14 @@ async function loadFromFirebase() {
   }
 
   try {
-    // Step 2: Load users via plain fetch (avoids DataCloneError from Supabase JS client)
-    const usersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(usersRes.ok){
-      const usersRows = await usersRes.json();
-      if(usersRows && usersRows.length > 0 && usersRows[0].data){
-        const parsed = typeof usersRows[0].data === 'string' ? JSON.parse(usersRows[0].data) : usersRows[0].data;
-        if(parsed && parsed.admin){
-          USERS = parsed;
-          localStorage.setItem('ycrm_users', JSON.stringify(USERS));
-          console.log('✅ Users loaded — executives:', USERS.executive.map(e=>e.name).join(', '));
-        }
+    // Step 2: Load users via Supabase JS client
+    const { data: usersRows } = await db.from('app_users').select('data').eq('id','users');
+    if(usersRows && usersRows.length > 0 && usersRows[0].data){
+      const parsed = typeof usersRows[0].data === 'string' ? JSON.parse(usersRows[0].data) : usersRows[0].data;
+      if(parsed && parsed.admin){
+        USERS = parsed;
+        localStorage.setItem('ycrm_users', JSON.stringify(USERS));
+        console.log('✅ Users loaded — executives:', USERS.executive.map(e=>e.name).join(', '));
       }
     }
 
@@ -3852,10 +3788,7 @@ async function factoryReset(){
       showToast('🔄 Clearing cloud data...');
       await db.from('call_logs').delete().neq('id','__none__');
       await db.from('leads').delete().neq('id','__none__');
-      await fetch(SUPA_URL + '/rest/v1/app_users?id=neq.__none__', {
-        method: 'DELETE',
-        headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-      });
+      await db.from('app_users').delete().neq('id','__none__');
       leads=[]; callLogs=[];
       USERS={admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2025-01-01'}],manager:[],executive:[]};
       await pushUsers();
@@ -3968,15 +3901,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // If not found locally, try cloud (admin may have added user after last sync)
         if(!userObj && supabaseReady){
           try {
-            const res = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
-              headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-            });
-            if(res.ok){
-              const rows = await res.json();
-              if(rows && rows[0] && rows[0].data){
-                const parsed = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
-                if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
-              }
+            const { data: sessRows } = await db.from('app_users').select('data').eq('id','users');
+            if(sessRows && sessRows[0] && sessRows[0].data){
+              const parsed = typeof sessRows[0].data==='string' ? JSON.parse(sessRows[0].data) : sessRows[0].data;
+              if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
             }
           } catch(e){}
           userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
