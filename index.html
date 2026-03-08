@@ -770,9 +770,38 @@ function startRealtimeSync(){
     .on('postgres_changes', {event:'*', schema:'public', table:'leads'},     () => scheduleSyncFromCloud())
     .on('postgres_changes', {event:'*', schema:'public', table:'call_logs'}, () => scheduleSyncFromCloud())
     .on('postgres_changes', {event:'*', schema:'public', table:'app_users'}, () => scheduleSyncFromCloud())
+    .on('postgres_changes', {event:'*', schema:'public', table:'plots'},     () => syncPlotsFromCloud())
     .subscribe((status) => {
       console.log('Realtime status:', status);
     });
+}
+
+// Sync only plots from cloud and re-render if on plots page
+async function syncPlotsFromCloud(){
+  if(!supabaseReady) return;
+  try {
+    const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    if(plotsRes.ok){
+      const cloudPlots = await plotsRes.json();
+      if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
+        plots = cloudPlots.map(p => ({
+          id: p.id,
+          sector: p.sector || '',
+          size: p.size || '',
+          price: p.price || '',
+          status: p.status || 'Available',
+          plotDescription: p.plot_description || ''
+        }));
+        localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+        console.log('🔄 Plots synced from cloud:', plots.length);
+        // Re-render plots page if it's currently visible
+        const plotPage = document.getElementById('page-plots');
+        if(plotPage && plotPage.classList.contains('active')) renderPlots();
+      }
+    }
+  } catch(e){ console.warn('syncPlotsFromCloud error:', e.message); }
 }
 
 // ══════════════════════════════════════════
@@ -864,33 +893,27 @@ async function pushConfig(){
 async function pushPlots(){
   if(!supabaseReady) return;
   try {
-    // Save all plots directly to plots table — one row per plot
+    // Use upsert per-plot so other devices' plots aren't wiped on partial updates
     const rows = plots.map(p => ({
       id: p.id,
       sector: p.sector || '',
       size: p.size || '',
       price: p.price || '',
-      status: p.status || 'Available'
+      status: p.status || 'Available',
+      plot_description: p.plotDescription || ''
     }));
-    // First clear old rows, then insert fresh
-    await fetch(SUPA_URL + '/rest/v1/plots?id=neq.__none__', {
-      method: 'DELETE',
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    const res = await fetch(SUPA_URL + '/rest/v1/plots', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(rows)
     });
-    if(rows.length > 0){
-      const res = await fetch(SUPA_URL + '/rest/v1/plots', {
-        method: 'POST',
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(rows)
-      });
-      if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
-      else console.log('✅ Plots pushed to cloud:', rows.length);
-    }
+    if(!res.ok) console.warn('pushPlots failed:', res.status, await res.text());
+    else console.log('✅ Plots pushed to cloud:', rows.length);
   } catch(e){ console.warn('pushPlots error:', e.message); }
 }
 async function loadConfig(){
@@ -916,7 +939,14 @@ async function loadConfig(){
     if(plotsRes.ok){
       const cloudPlots = await plotsRes.json();
       if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
-        plots = cloudPlots;
+        plots = cloudPlots.map(p => ({
+          id: p.id,
+          sector: p.sector || '',
+          size: p.size || '',
+          price: p.price || '',
+          status: p.status || 'Available',
+          plotDescription: p.plot_description || ''
+        }));
         localStorage.setItem('ycrm_plots', JSON.stringify(plots));
         console.log('✅ Plots loaded from cloud:', plots.length);
       }
@@ -1703,6 +1733,7 @@ function openPlot(id){
       <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;margin-bottom:4px">${p.size}</div>
       <div style="font-size:.8rem;color:var(--muted2);margin-bottom:4px">📍 ${p.sector}</div>
       <div style="font-size:1rem;font-weight:700;color:var(--gold);margin-bottom:8px">${p.price}</div>
+      ${p.plotDescription ? `<div style="font-size:.78rem;color:var(--muted2);margin-bottom:8px">📋 ${p.plotDescription}</div>` : ''}
       <div><span class="status-dot ${p.status.toLowerCase()}"></span><span style="font-size:.78rem">${p.status}</span></div>
     </div>
     ${currentRole==='admin'?`
@@ -1711,6 +1742,9 @@ function openPlot(id){
     </div>
     <div class="form-group"><label class="form-label">Update Price</label>
       <input class="form-input" id="plot-price-inp" value="${p.price}" placeholder="e.g. ₹20L">
+    </div>
+    <div class="form-group"><label class="form-label">Plot Description</label>
+      <input class="form-input" id="plot-desc-inp" value="${p.plotDescription||''}" placeholder="e.g. Corner, Park facing...">
     </div>
     <button class="btn-primary" onclick="savePlotEdit('${id}')">Save Changes</button>
     <button class="btn-secondary" onclick="deletePlot('${id}')" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red)">Delete Plot</button>
@@ -1723,6 +1757,7 @@ function savePlotEdit(id){
   const p=plots.find(x=>x.id===id);if(!p)return;
   p.status=document.getElementById('plot-status-sel').value;
   p.price=document.getElementById('plot-price-inp').value;
+  p.plotDescription=(document.getElementById('plot-desc-inp')||{}).value||p.plotDescription||'';
   save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot updated!');
 }
 
@@ -1737,6 +1772,7 @@ function openAddPlot(){
     <div class="form-group"><label class="form-label">Sector</label><input class="form-input" id="np-sector" placeholder="e.g. Sector 30"></div>
     <div class="form-group"><label class="form-label">Size</label><input class="form-input" id="np-size" placeholder="e.g. 200 sq yd"></div>
     <div class="form-group"><label class="form-label">Price</label><input class="form-input" id="np-price" placeholder="e.g. ₹32L"></div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="np-desc" placeholder="e.g. Corner, Park facing..."></div>
     <div class="form-group"><label class="form-label">Status</label>
       <select class="form-select" id="np-status"><option>Available</option><option>Booked</option><option>Hold</option></select>
     </div>
@@ -1748,7 +1784,7 @@ function openAddPlot(){
 function saveNewPlot(){
   const id=document.getElementById('np-id').value.trim();
   if(!id){showToast('Plot ID required','error');return;}
-  plots.push({id,sector:document.getElementById('np-sector').value,size:document.getElementById('np-size').value,price:document.getElementById('np-price').value,status:document.getElementById('np-status').value});
+  plots.push({id,sector:document.getElementById('np-sector').value,size:document.getElementById('np-size').value,price:document.getElementById('np-price').value,plotDescription:(document.getElementById('np-desc')||{}).value||'',status:document.getElementById('np-status').value});
   save();pushPlots();closeModal('plotModal');renderPlots();showToast('Plot added!');
 }
 
