@@ -876,7 +876,7 @@ async function pushSinglePlot(p){
   try {
     const row = {
       id: p.id,
-      sector: p.sector || '',
+      sector: p.name ? (p.name + (p.sector ? ' | ' + p.sector : '')) : (p.sector || ''),
       size: p.size || '',
       price: p.price || '',
       status: p.status || 'Available'
@@ -1803,7 +1803,7 @@ function renderPlots(){
     <div class="plots-grid">
       ${filtered.map(p=>`
         <div class="plot-card" onclick="openPlot('${p.id}')">
-          <div class="plot-id">${p.id}</div>
+          <div class="plot-id">${p.name || p.sector || p.id}</div>
           <div class="plot-size">${p.size}</div>
           <div class="plot-sector">${p.sector}</div>
           <div class="plot-price">${p.price}</div>
@@ -1824,7 +1824,7 @@ function setPlotFilter(f,el){
 function openPlot(id){
   const p=plots.find(x=>x.id===id);if(!p)return;
   activePlotId=id;
-  document.getElementById('plot-modal-title').textContent='🏗️ '+p.id;
+  document.getElementById('plot-modal-title').textContent='🏗️ '+(p.name||p.sector||p.id);
   const statuses=['Available','Hold','Booked'];
   document.getElementById('plot-modal-body').innerHTML=`
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
@@ -1872,10 +1872,10 @@ function deletePlot(id){
 function openAddPlot(){
   document.getElementById('plot-modal-title').textContent='➕ Add New Plot';
   document.getElementById('plot-modal-body').innerHTML=`
-    <div class="form-group"><label class="form-label">Plot ID</label><input class="form-input" id="np-id" placeholder="e.g. YD-E501"></div>
-    <div class="form-group"><label class="form-label">Sector</label><input class="form-input" id="np-sector" placeholder="e.g. Sector 30"></div>
-    <div class="form-group"><label class="form-label">Size</label><input class="form-input" id="np-size" placeholder="e.g. 200 sq yd"></div>
-    <div class="form-group"><label class="form-label">Price</label><input class="form-input" id="np-price" placeholder="e.g. ₹32L"></div>
+    <div class="form-group"><label class="form-label">Plot Name / ID</label><input class="form-input" id="np-name" placeholder="e.g. YEIDA Plot A1"></div>
+    <div class="form-group"><label class="form-label">Sector</label><input class="form-input" id="np-sector" placeholder="e.g. Sector 18"></div>
+    <div class="form-group"><label class="form-label">Size</label><input class="form-input" id="np-size" placeholder="e.g. 300 SQM"></div>
+    <div class="form-group"><label class="form-label">Price</label><input class="form-input" id="np-price" placeholder="e.g. 2.15CR"></div>
     <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="np-desc" placeholder="e.g. Corner, Park facing..."></div>
     <div class="form-group"><label class="form-label">Status</label>
       <select class="form-select" id="np-status"><option>Available</option><option>Booked</option><option>Hold</option></select>
@@ -1886,10 +1886,12 @@ function openAddPlot(){
 }
 
 async function saveNewPlot(){
-  const id = document.getElementById('np-id').value.trim();
-  if(!id){ showToast('Plot ID required','error'); return; }
+  const name = (document.getElementById('np-name').value || '').trim();
+  // Always generate a unique internal ID — never use user-typed text as ID
+  const id = 'PLT_' + Date.now() + '_' + Math.random().toString(36).slice(2,6).toUpperCase();
   const newPlot = {
     id,
+    name: name || document.getElementById('np-sector').value,
     sector: document.getElementById('np-sector').value,
     size: document.getElementById('np-size').value,
     price: document.getElementById('np-price').value,
