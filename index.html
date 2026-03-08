@@ -527,22 +527,27 @@ function initSupabase(){
   }
 }
 
-// Safe Supabase wrapper — uses JS client, never crashes
+// ── Plain fetch wrappers (no Supabase JS client DataCloneError) ──
 async function dbGet(table){
-  if(!supabaseReady) return null;
-  try {
-    const { data, error } = await db.from(table).select('*');
-    if(error){ console.warn('dbGet failed:', table, error.message); return null; }
-    return data;
-  } catch(e){ console.warn('dbGet failed:', table, e.message); return null; }
+  try{
+    const res = await fetch(SUPA_URL+'/rest/v1/'+table+'?select=*',{
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+    });
+    if(!res.ok){ console.warn('dbGet error:',table,res.status); return null; }
+    return await res.json();
+  }catch(e){ console.warn('dbGet failed:',table,e.message); return null; }
 }
 
 async function dbUpsert(table, row){
-  if(!supabaseReady) return;
-  try {
-    const { error } = await db.from(table).upsert(row, { onConflict: 'id' });
-    if(error){ console.warn('dbUpsert failed:', table, error.message); }
-  } catch(e){ console.warn('dbUpsert failed:', table, e.message); }
+  try{
+    const res = await fetch(SUPA_URL+'/rest/v1/'+table,{
+      method:'POST',
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
+               'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify(Array.isArray(row)?row:[row])
+    });
+    if(!res.ok) console.warn('dbUpsert error:',table,res.status);
+  }catch(e){ console.warn('dbUpsert failed:',table,e.message); }
 }
 async function loadUsersFromCloud(){
   try{
@@ -560,20 +565,23 @@ async function loadUsersFromCloud(){
   }
 }
 async function dbDelete(table, id){
-  if(!supabaseReady || !db) return;
-  try {
-    const {error} = await db.from(table).delete().eq('id', id);
-    if(error) throw error;
-  } catch(e){ console.warn('dbDelete failed:', table, e); }
+  try{
+    await fetch(SUPA_URL+'/rest/v1/'+table+'?id=eq.'+encodeURIComponent(id),{
+      method:'DELETE',
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+    });
+  }catch(e){ console.warn('dbDelete failed:',table,e.message); }
 }
 
 async function dbSet(table, key, value){
-  // For simple key-value settings (users, config)
-  if(!supabaseReady || !db) return;
-  try {
-    const {error} = await db.from(table).upsert({id: key, data: JSON.stringify(value)}, {onConflict:'id'});
-    if(error) throw error;
-  } catch(e){ console.warn('dbSet failed:', table, e); }
+  try{
+    await fetch(SUPA_URL+'/rest/v1/'+table,{
+      method:'POST',
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
+               'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify([{id:key, data:JSON.stringify(value)}])
+    });
+  }catch(e){ console.warn('dbSet failed:',table,e.message); }
 }
 
 // Load all data from Supabase, merge with localStorage
@@ -616,11 +624,18 @@ async function syncFromCloud(){
       }
     }
     // ── USERS ──
-    const { data: syncUsersRows } = await db.from('app_users').select('data').eq('id','users');
-    if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
-      const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
-      if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
+    const usersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    if(usersRes.ok){
+      const syncUsersRows = await usersRes.json();
+      if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
+        const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
+        if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
+      }
     }
+    // ── PLOTS (load BEFORE rendering) ──
+    await syncPlotsFromCloud();
     showSyncBanner('✅ Synced!', true);
 
     // ── Refresh all active panels ──
@@ -632,10 +647,10 @@ async function syncFromCloud(){
       const leadsPage = document.getElementById('page-leads');
       if(leadsPage && leadsPage.classList.contains('active')) renderLeads();
     }
-    // Re-render plots if plots page is active
+    // Re-render plots page with fresh data
     const plotsPage = document.getElementById('page-plots');
     if(plotsPage && plotsPage.classList.contains('active')) renderPlots();
-    // Also reload config (picks up any plot changes from admin)
+    // Reload CRM config
     await loadConfig();
 
   } catch(e){
@@ -656,13 +671,13 @@ function showSyncBanner(msg, fadeOut=false){
 
 // Push a single lead to cloud
 async function pushLead(lead){
-  if(!supabaseReady) return;
   lead.updatedAt = new Date().toISOString();
-  const {error} = await db.from('leads').upsert(
-    {id: lead.id, data: JSON.stringify(lead)},
-    {onConflict: 'id'}
-  );
-  if(error) console.warn('pushLead failed for', lead.id, ':', error.message, error.code);
+  await fetch(SUPA_URL+'/rest/v1/leads',{
+    method:'POST',
+    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
+             'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify([{id:lead.id, data:JSON.stringify(lead)}])
+  });
 }
 
 // ── Push ALL leads to Supabase in one batch ──
@@ -679,10 +694,16 @@ async function saveAllLeadsToCloud(){
         l.updatedAt = new Date().toISOString();
         return {id: l.id, data: JSON.stringify(l)};
       });
-      const {error} = await db.from('leads').upsert(rows, {onConflict: 'id'});
-      if(error){
-        console.warn('Batch upsert error:', error.message, error.code, error.hint);
-        showToast('❌ Push failed: ' + error.message, 'error');
+      const res = await fetch(SUPA_URL+'/rest/v1/leads',{
+        method:'POST',
+        headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
+                 'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify(rows)
+      });
+      if(!res.ok){
+        const err = await res.text();
+        console.warn('Batch upsert error:', res.status, err);
+        showToast('❌ Push failed: ' + res.status, 'error');
         return;
       }
       pushed += chunk.length;
@@ -699,9 +720,12 @@ async function saveAllLeadsToCloud(){
 async function loadAllLeadsFromCloud(){
   if(!supabaseReady) return [];
   try {
-    const { data, error } = await db.from('leads').select('*');
-    if(error){ console.warn('loadAllLeadsFromCloud error:', error.message); return []; }
-    if(data && data.length > 0){
+    const res = await fetch(SUPA_URL+'/rest/v1/leads?select=*',{
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+    });
+    if(!res.ok){ console.warn('loadAllLeadsFromCloud error:',res.status); return []; }
+    const data = await res.json();
+    if(Array.isArray(data) && data.length > 0){
       const parsed = data.map(row => {
         try { return typeof row.data === 'string' ? JSON.parse(row.data) : row.data; }
         catch(e){ return null; }
@@ -747,22 +771,25 @@ function startRealtimeSync(){
 
 // Sync only plots from cloud and re-render if on plots page
 async function syncPlotsFromCloud(){
-  if(!supabaseReady) return;
   try {
-    const { data: cloudPlots, error } = await db.from('plots').select('*');
-    if(error){ console.warn('syncPlotsFromCloud error:', error.message); return; }
-    plots = Array.isArray(cloudPlots) ? cloudPlots.map(p => ({
-      id: p.id,
-      sector: p.sector || '',
-      size: p.size || '',
-      price: p.price || '',
-      status: p.status || 'Available',
-      plotDescription: p['plot description'] || p['plot_description'] || ''
-    })) : [];
-    localStorage.setItem('ycrm_plots', JSON.stringify(plots));
-    console.log('🔄 Plots synced from cloud:', plots.length);
-    const plotPage = document.getElementById('page-plots');
-    if(plotPage && plotPage.classList.contains('active')) renderPlots();
+    const res = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
+      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
+    });
+    if(!res.ok){ console.warn('syncPlotsFromCloud error:', res.status); return; }
+    const cloudPlots = await res.json();
+    if(Array.isArray(cloudPlots)){
+      plots = cloudPlots.map(p => ({
+        id: p.id,
+        sector: p.sector || '',
+        size: p.size || '',
+        price: p.price || '',
+        status: p.status || 'Available'
+      }));
+      localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+      console.log('🔄 Plots synced from cloud:', plots.length);
+      const plotPage = document.getElementById('page-plots');
+      if(plotPage && plotPage.classList.contains('active')) renderPlots();
+    }
   } catch(e){ console.warn('syncPlotsFromCloud error:', e.message); }
 }
 
@@ -1078,11 +1105,10 @@ async function doLogin(){
     showToast('🔄 Checking cloud...', '');
     // Pull latest users from Supabase
     try {
-      const { data: loginUserRows } = await db.from('app_users').select('data').eq('id','users');
-      if(loginUserRows && loginUserRows[0] && loginUserRows[0].data){
-        const parsed = typeof loginUserRows[0].data==='string' ? JSON.parse(loginUserRows[0].data) : loginUserRows[0].data;
-        if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
-      }
+      const _lur = await fetch(SUPA_URL+'/rest/v1/app_users?id=eq.users&select=data',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+      if(_lur.ok){ const _lud = await _lur.json();
+        if(_lud&&_lud[0]&&_lud[0].data){ const parsed=typeof _lud[0].data==='string'?JSON.parse(_lud[0].data):_lud[0].data;
+          if(parsed&&parsed.admin){ USERS=parsed; localStorage.setItem('ycrm_users',JSON.stringify(USERS)); } } }
     } catch(e){ console.warn('User sync on login failed:', e.message); }
     // Retry after cloud sync
     userObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
@@ -1831,9 +1857,11 @@ async function savePlotEdit(id){
   p.price  = document.getElementById('plot-price-inp').value;
   p.plotDescription = (document.getElementById('plot-desc-inp')||{}).value || p.plotDescription || '';
   save();
-  closeModal('plotModal'); renderPlots();
+  closeModal('plotModal');
   showToast('⏳ Saving to cloud...');
   const ok = await pushSinglePlot(p);
+  await syncPlotsFromCloud();
+  renderPlots();
   showToast(ok ? '✅ Plot updated on all devices!' : '⚠️ Saved locally, cloud sync failed');
 }
 
@@ -1870,9 +1898,10 @@ async function saveNewPlot(){
   plots.push(newPlot);
   save();
   closeModal('plotModal');
-  renderPlots();
   showToast('⏳ Saving plot to cloud...');
   const ok = await pushSinglePlot(newPlot);
+  await syncPlotsFromCloud();
+  renderPlots();
   showToast(ok ? '✅ Plot added & synced to all devices!' : '⚠️ Plot saved locally, cloud sync failed');
 }
 
@@ -2108,7 +2137,7 @@ function adminTeamHTML(){
     +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">📋 All Leads</div>'
     +'<div style="display:flex;align-items:center;gap:6px">'
     +'<div style="font-size:.7rem;color:var(--muted2)">'+leads.length+' total</div>'
-    +(leads.length>0?'<button onclick="if(confirm(\'Delete ALL '+leads.length+' leads? This cannot be undone!\')){if(confirm(\'FINAL WARNING: This deletes all leads from cloud too. Are you sure?\')){leads=[];save();if(supabaseReady)db.from(\'leads\').delete().neq(\'id\',\'\').then(()=>{});renderAdminPanel();renderDashboard();showToast(\'All leads deleted\');}}" style="background:none;border:1px solid rgba(240,92,92,.3);border-radius:6px;color:var(--red);cursor:pointer;font-size:.68rem;padding:3px 8px">🗑️ Clear All</button>':'')
+    +(leads.length>0?'<button onclick="if(confirm(\'Delete ALL '+leads.length+' leads? This cannot be undone!\')){if(confirm(\'FINAL WARNING: This deletes all leads from cloud too. Are you sure?\')){leads=[];save();fetch(SUPA_URL+\'/rest/v1/leads?id=neq.__none__\',{method:\'DELETE\',headers:{\'apikey\':SUPA_KEY,\'Authorization\':\'Bearer \'+SUPA_KEY}});renderAdminPanel();renderDashboard();showToast(\'All leads deleted\');}}" style="background:none;border:1px solid rgba(240,92,92,.3);border-radius:6px;color:var(--red);cursor:pointer;font-size:.68rem;padding:3px 8px">🗑️ Clear All</button>':'')
     +'</div>'
     +'</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:10px">'
@@ -3241,9 +3270,7 @@ function deleteLead(id){
   save();
   // Delete from Supabase cloud too
   if(supabaseReady){
-    db.from('leads').delete().eq('id',id).then(({error})=>{
-      if(error) console.warn('Cloud delete failed:', error);
-    });
+    fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
   }
   closeModal('leadModal');
   renderLeads(); renderDashboard();
@@ -3500,12 +3527,10 @@ async function importLeads(){
         return {id: l.id, data: JSON.stringify(l)};
       }).filter(Boolean);
 
-      const { error: chunkErr } = await db.from('leads').upsert(rows, { onConflict: 'id' });
-      if(chunkErr){
-        console.error('Supabase push error:', chunkErr.message);
-        showToast('❌ Cloud push failed: ' + chunkErr.message, 'error');
-        return;
-      }
+      const _ir = await fetch(SUPA_URL+'/rest/v1/leads',{method:'POST',
+        headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify(rows)});
+      if(!_ir.ok){ const _ie=await _ir.text(); console.error('Supabase push error:',_ie); showToast('❌ Cloud push failed: '+_ir.status,'error'); return; }
     }
     showToast('☁️ ' + imported + ' leads live on all devices!');
     console.log('✅ Pushed', imported, 'leads to Supabase');
@@ -3527,7 +3552,7 @@ function deleteByExec(execName){
   leads = leads.filter(l=>!(l.assigned===execName&&l.assignedRole==='executive'));
   save();
   if(supabaseReady){
-    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
   }
   showToast('🗑️ Deleted '+cnt+' records from '+execName.split(' ')[0]);
   switchAdminTab('upload');
@@ -3541,7 +3566,7 @@ function deleteByManager(mgrName){
   leads = leads.filter(l=>!((l.assignedManager===mgrName||l.transferredTo===mgrName)&&l.assignedRole==='manager'));
   save();
   if(supabaseReady){
-    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
   }
   showToast('🗑️ Deleted '+cnt+' leads from '+mgrName.split(' ')[0]);
   switchAdminTab('upload');
@@ -3556,7 +3581,7 @@ function deleteAllColdData(){
   leads = leads.filter(l=>l.assignedRole!=='executive');
   save();
   if(supabaseReady){
-    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
   }
   showToast('🗑️ All cold data deleted ('+cnt+' records)');
   switchAdminTab('upload');
@@ -3571,7 +3596,7 @@ function deleteAllLeads(){
   leads = leads.filter(l=>l.assignedRole!=='manager');
   save();
   if(supabaseReady){
-    toDelete.forEach(id => db.from('leads').delete().eq('id',id).then(()=>{}));
+    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
   }
   showToast('🗑️ All leads deleted ('+cnt+' records)');
   switchAdminTab('upload');
@@ -3644,12 +3669,9 @@ async function showDebugInfo(){
   let cloudSample = '—';
   if(supabaseReady){
     try{
-      const r = await db.from('leads').select('id,data').limit(5);
-      cloudCount = r.data ? r.data.length + ' (sample of first 5)' : 'error';
-      if(r.data && r.data.length){
-        const parsed = r.data.map(x=>{ try{ return JSON.parse(x.data); }catch(e){ return x; } });
-        cloudSample = parsed.map(x=>(x.assigned||'?')+' / '+(x.assignedRole||'?')).join('<br>');
-      }
+      const _dr = await fetch(SUPA_URL+'/rest/v1/leads?select=id,data&limit=5',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+      if(_dr.ok){ const _dd=await _dr.json(); cloudCount=_dd.length+' (sample of first 5)';
+        if(_dd.length){ const parsed=_dd.map(x=>{try{return JSON.parse(x.data);}catch(e){return x;}}); cloudSample=parsed.map(x=>(x.assigned||'?')+'/'+(x.assignedRole||'?')).join('<br>'); }}
     }catch(e){ cloudCount = 'fetch error: '+e.message; }
   }
 
@@ -3704,15 +3726,11 @@ async function loadFromFirebase() {
 
   try {
     // Step 2: Load users via Supabase JS client
-    const { data: usersRows } = await db.from('app_users').select('data').eq('id','users');
-    if(usersRows && usersRows.length > 0 && usersRows[0].data){
-      const parsed = typeof usersRows[0].data === 'string' ? JSON.parse(usersRows[0].data) : usersRows[0].data;
-      if(parsed && parsed.admin){
-        USERS = parsed;
-        localStorage.setItem('ycrm_users', JSON.stringify(USERS));
-        console.log('✅ Users loaded — executives:', USERS.executive.map(e=>e.name).join(', '));
-      }
-    }
+    const _ufr = await fetch(SUPA_URL+'/rest/v1/app_users?id=eq.users&select=data',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+    if(_ufr.ok){ const _ufd=await _ufr.json();
+      if(_ufd&&_ufd[0]&&_ufd[0].data){ const parsed=typeof _ufd[0].data==='string'?JSON.parse(_ufd[0].data):_ufd[0].data;
+        if(parsed&&parsed.admin){ USERS=parsed; localStorage.setItem('ycrm_users',JSON.stringify(USERS));
+          console.log('✅ Users loaded — executives:',USERS.executive.map(e=>e.name).join(', ')); } } }
 
     // Step 3: Load ALL leads (bulk chunks → individual rows fallback)
     const cloudLeads = await loadAllLeadsFromCloud();
@@ -3728,11 +3746,9 @@ async function loadFromFirebase() {
     }
 
     // Step 4: Load call logs
-    const cloudCalls = await db.from('call_logs').select('*');
-    if(cloudCalls.data && cloudCalls.data.length > 0){
-      callLogs = cloudCalls.data.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
-      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
-    }
+    const _clr = await fetch(SUPA_URL+'/rest/v1/call_logs?select=*',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+    if(_clr.ok){ const _cld=await _clr.json();
+      if(Array.isArray(_cld)&&_cld.length>0){ callLogs=_cld.map(r=>typeof r.data==='string'?JSON.parse(r.data):r.data); localStorage.setItem('ycrm_calls',JSON.stringify(callLogs)); } }
 
   } catch(e) {
     console.error('Cloud load error:', e);
@@ -4090,9 +4106,9 @@ async function factoryReset(){
   if(true){
     try{
       showToast('🔄 Clearing cloud data...');
-      await db.from('call_logs').delete().neq('id','__none__');
-      await db.from('leads').delete().neq('id','__none__');
-      await db.from('app_users').delete().neq('id','__none__');
+      await fetch(SUPA_URL+'/rest/v1/call_logs?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+      await fetch(SUPA_URL+'/rest/v1/leads?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+      await fetch(SUPA_URL+'/rest/v1/app_users?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
       leads=[]; callLogs=[];
       USERS={admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2025-01-01'}],manager:[],executive:[]};
       await pushUsers();
@@ -4170,12 +4186,12 @@ function rowToLead(r){
 function rowToUser(r){ return {id:r.id,name:r.name,pass:r.pass,phone:r.phone||'',email:r.email||'',active:r.active,createdAt:r.created_at||''}; }
 
 async function saveCallLog(c){
-  try{ await db.from('call_logs').upsert(callToRow(c)); }
+  try{ await dbUpsert('call_logs', callToRow(c)); }
   catch(e){ console.error('saveCallLog error:',e); }
 }
 
 async function saveLead(l){
-  try{ await db.from('leads').upsert(leadToRow(l)); }
+  try{ await dbUpsert('leads', leadToRow(l)); }
   catch(e){ console.error('saveLead error:',e); }
 }
 
@@ -4205,11 +4221,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // If not found locally, try cloud (admin may have added user after last sync)
         if(!userObj && supabaseReady){
           try {
-            const { data: sessRows } = await db.from('app_users').select('data').eq('id','users');
-            if(sessRows && sessRows[0] && sessRows[0].data){
-              const parsed = typeof sessRows[0].data==='string' ? JSON.parse(sessRows[0].data) : sessRows[0].data;
-              if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
-            }
+            const _sr=await fetch(SUPA_URL+'/rest/v1/app_users?id=eq.users&select=data',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+            if(_sr.ok){const _sd=await _sr.json(); if(_sd&&_sd[0]&&_sd[0].data){const parsed=typeof _sd[0].data==='string'?JSON.parse(_sd[0].data):_sd[0].data;
+              if(parsed&&parsed.admin){USERS=parsed;localStorage.setItem('ycrm_users',JSON.stringify(USERS));}}}
           } catch(e){}
           userObj = USERS[s.role].find(u=>u.name.toLowerCase()===s.user.toLowerCase()&&u.active);
         }
