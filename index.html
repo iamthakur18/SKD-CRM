@@ -1675,6 +1675,13 @@ function statCardClick(panelId, title, htmlContent){
   else document.getElementById('userReportModal').querySelector('[style*="padding:16px"]').prepend(panel);
 }
 
+function statCardClickKey(panelId, dataKey){
+  const d = (window._urData||{})[dataKey];
+  if(!d){ return; }
+  const html = d.type==='call' ? miniCallList(d.items, d.empty) : miniLeadList(d.items, d.empty);
+  statCardClick(panelId, d.title, html);
+}
+
 function showUserReport(name, role){
   const isExec = role === 'executive';
   const color  = isExec ? 'var(--green)' : 'var(--blue)';
@@ -1721,17 +1728,23 @@ function showUserReport(name, role){
     const todayCallList=[...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||''));
     const pct=userLeads.length?Math.round(called.length/userLeads.length*100):0;
     const uid=name.replace(/\s+/g,'_');
+    // Store data in global map to avoid JSON-in-onclick escaping bugs
+    window._urData = window._urData || {};
+    window._urData['pending_'+uid] = {title:'⏳ Pending ('+pending.length+')', items: pending.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})), type:'lead', empty:'No pending calls'};
+    window._urData['called_'+uid]  = {title:'✅ Called ('+called.length+')',   items: called.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})),  type:'lead', empty:'None called yet'};
+    window._urData['gen_'+uid]     = {title:'🔥 Generated ('+generated.length+')', items: generated.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})), type:'lead', empty:'None generated yet'};
+    window._urData['today_'+uid]   = {title:'📞 Today\'s Calls ('+todayCallList.length+')', items: todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})), type:'call', empty:'No calls today'};
     statsBlock=`<div id="ur-stats-${uid}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-      <div onclick="statCardClick('urp_pending_${uid}','⏳ Pending (${pending.length})',miniLeadList(${JSON.stringify(pending.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No pending calls'))"
+      <div onclick="statCardClickKey('urp_pending_${uid}','pending_${uid}')"
         style="background:rgba(240,92,92,.07);border:1px solid rgba(240,92,92,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--red)">${pending.length}</div><div style="font-size:.6rem;color:var(--red)">Pending</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_called_${uid}','✅ Called (${called.length})',miniLeadList(${JSON.stringify(called.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'None called yet'))"
+      <div onclick="statCardClickKey('urp_called_${uid}','called_${uid}')"
         style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--green)">${called.length}</div><div style="font-size:.6rem;color:var(--muted2)">Called</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_generated_${uid}','🔥 Generated (${generated.length})',miniLeadList(${JSON.stringify(generated.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'None generated yet'))"
+      <div onclick="statCardClickKey('urp_generated_${uid}','gen_${uid}')"
         style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${generated.length}</div><div style="font-size:.6rem;color:var(--muted2)">Generated</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_today_${uid}','📞 Today\'s Calls (${todayCallList.length})',miniCallList(${JSON.stringify(todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})))}, 'No calls today'))"
+      <div onclick="statCardClickKey('urp_today_${uid}','today_${uid}')"
         style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--blue)">${todayCallList.length}</div><div style="font-size:.6rem;color:var(--muted2)">Today</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
     </div>
@@ -1742,17 +1755,22 @@ function showUserReport(name, role){
     const warm=userLeads.filter(l=>l.status==='Warm');
     const todayCallList=[...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||''));
     const uid=name.replace(/\s+/g,'_');
+    window._urData = window._urData || {};
+    window._urData['all_'+uid]     = {title:'📋 All Leads ('+userLeads.length+')', items: userLeads.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})), type:'lead', empty:'No leads'};
+    window._urData['hot_'+uid]     = {title:'🔥 Hot Leads ('+hot.length+')',       items: hot.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})),       type:'lead', empty:'No hot leads'};
+    window._urData['closed_'+uid]  = {title:'✅ Closed ('+closed.length+')',        items: closed.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})),    type:'lead', empty:'No closed deals'};
+    window._urData['mtoday_'+uid]  = {title:'📞 Today\'s Calls ('+todayCallList.length+')', items: todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})), type:'call', empty:'No calls today'};
     statsBlock=`<div id="ur-stats-${uid}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-      <div onclick="statCardClick('urp_all_${uid}','📋 All Leads (${userLeads.length})',miniLeadList(${JSON.stringify(userLeads.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No leads'))"
+      <div onclick="statCardClickKey('urp_all_${uid}','all_${uid}')"
         style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:${color}">${userLeads.length}</div><div style="font-size:.6rem;color:var(--muted2)">Leads</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_hot_${uid}','🔥 Hot Leads (${hot.length})',miniLeadList(${JSON.stringify(hot.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No hot leads'))"
+      <div onclick="statCardClickKey('urp_hot_${uid}','hot_${uid}')"
         style="background:rgba(255,80,80,.07);border:1px solid rgba(255,80,80,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--hot)">${hot.length}</div><div style="font-size:.6rem;color:var(--muted2)">Hot</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_closed_${uid}','✅ Closed (${closed.length})',miniLeadList(${JSON.stringify(closed.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No closed deals'))"
+      <div onclick="statCardClickKey('urp_closed_${uid}','closed_${uid}')"
         style="background:rgba(34,201,138,.07);border:1px solid rgba(34,201,138,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--green)">${closed.length}</div><div style="font-size:.6rem;color:var(--muted2)">Closed</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
-      <div onclick="statCardClick('urp_today_${uid}','📞 Today\'s Calls (${todayCallList.length})',miniCallList(${JSON.stringify(todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})))}, 'No calls today'))"
+      <div onclick="statCardClickKey('urp_mtoday_${uid}','mtoday_${uid}')"
         style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
         <div style="font-size:1.3rem;font-weight:800;color:var(--blue)">${todayCallList.length}</div><div style="font-size:.6rem;color:var(--muted2)">Today</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
     </div>`;
@@ -1809,13 +1827,13 @@ function showUserReport(name, role){
       </div>
       <div style="padding:16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-          <div onclick="statCardClick('urp_allcalls_'+name.replace(/\s+/g,'_'),'📞 All Calls ('+totalCalls+')',miniCallList([...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))),'No calls yet'))"
+          <div onclick="(function(){const uid=name.replace(/\s+/g,'_');window._urData=window._urData||{};window._urData['allcalls_'+uid]={title:'📞 All Calls ('+totalCalls+')',items:[...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))).map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})),type:'call',empty:'No calls yet'};statCardClickKey('urp_allcalls_'+uid,'allcalls_'+uid);})()"
             style="background:${bg};border-radius:12px;padding:14px;text-align:center;cursor:pointer">
             <div style="font-size:1.8rem;font-weight:800;color:${color}">${totalCalls}</div>
             <div style="font-size:.68rem;color:var(--muted2)">Total Calls Made</div>
             <div style="font-size:.58rem;color:${color}">tap to view</div>
           </div>
-          <div onclick="statCardClick('urp_todaycalls_'+name.replace(/\s+/g,'_'),'📞 Today\'s Calls ('+todayCalls+')',miniCallList([...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||'')),'No calls today'))"
+          <div onclick="(function(){const uid=name.replace(/\s+/g,'_');window._urData=window._urData||{};window._urData['todaycalls_'+uid]={title:'📞 Today\'s Calls ('+todayCalls+')',items:[...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||'')).map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})),type:'call',empty:'No calls today'};statCardClickKey('urp_todaycalls_'+uid,'todaycalls_'+uid);})()"
             style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;cursor:pointer">
             <div style="font-size:1.8rem;font-weight:800;color:var(--gold)">${todayCalls}</div>
             <div style="font-size:.68rem;color:var(--muted2)">Calls Today</div>
