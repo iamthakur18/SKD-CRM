@@ -589,27 +589,51 @@ async function syncFromCloud(){
     // ── LEADS (bulk load — same as startup) ──
     const cloudLeads = await loadAllLeadsFromCloud();
     if(cloudLeads.length > 0){
+      // Cloud is always source of truth — but protect leads saved in last 10s (just pushed by this device)
+      const now = Date.now();
+      const recentlySaved = new Set(leads
+        .filter(l=>l.updatedAt && (now - new Date(l.updatedAt).getTime()) < 10000)
+        .map(l=>l.id));
       const merged = {};
-      leads.forEach(l => { merged[l.id] = l; });
-      cloudLeads.forEach(cl => {
-        const local = merged[cl.id];
-        if(!local){ merged[cl.id] = cl; }
-        else {
-          const cloudTime = cl.updatedAt ? new Date(cl.updatedAt) : new Date(0);
-          const localTime = local.updatedAt ? new Date(local.updatedAt) : new Date(0);
-          if(cloudTime >= localTime) merged[cl.id] = cl;
-        }
+      cloudLeads.forEach(cl => { merged[cl.id] = cl; });
+      // Keep local version only for very recently updated leads (grace period)
+      recentlySaved.forEach(id => {
+        const local = leads.find(l=>l.id===id);
+        if(local) merged[id] = local;
       });
       leads = Object.values(merged).sort((a,b)=> new Date(b.createdAt||0)-new Date(a.createdAt||0));
       localStorage.setItem('ycrm_leads', JSON.stringify(leads));
     }
-    // ── CALL LOGS ──
+    // ── CALL LOGS — merge cloud + local (never lose calls) ──
     const cloudCalls = await dbGet('call_logs');
     if(cloudCalls && cloudCalls.length > 0){
-      const parsed = cloudCalls.map(r => typeof r.data==='string' ? JSON.parse(r.data) : r.data);
-      if(parsed.length >= callLogs.length){
-        callLogs = parsed;
-        localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+      const parsed = cloudCalls
+        .map(r => { try{ return typeof r.data==='string' ? JSON.parse(r.data) : r.data; }catch(e){ return null; } })
+        .filter(Boolean);
+      // Merge: cloud wins per id, but keep any local calls not yet in cloud
+      const merged = {};
+      parsed.forEach(c => { if(c && c.id) merged[c.id] = c; });
+      callLogs.forEach(c => { if(c && c.id && !merged[c.id]) merged[c.id] = c; });
+      callLogs = Object.values(merged).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+      // Push any local-only calls to cloud so they sync up
+      const localOnly = callLogs.filter(c => !parsed.find(p=>p.id===c.id));
+      if(localOnly.length > 0){
+        console.log('Pushing', localOnly.length, 'local-only calls to cloud');
+        localOnly.forEach(c => saveCallLog(c));
+      }
+      // Recalculate callCount on each lead from actual call logs (self-healing)
+      let callCountFixed = 0;
+      leads.forEach(l => {
+        const actualCount = callLogs.filter(c=>c.leadId===l.id).length;
+        if(actualCount !== (l.callCount||0)){
+          l.callCount = actualCount;
+          callCountFixed++;
+        }
+      });
+      if(callCountFixed > 0){
+        localStorage.setItem('ycrm_leads', JSON.stringify(leads));
+        console.log('Fixed callCount on', callCountFixed, 'leads');
       }
     }
     // ── USERS ──
@@ -618,6 +642,8 @@ async function syncFromCloud(){
       const parsed = typeof _scU[0].data==='string' ? JSON.parse(_scU[0].data) : _scU[0].data;
       if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
     }
+    // ── TEAM LOCATIONS (admin only) ──
+    if(currentRole==='admin') await loadTeamLocations();
     // ── PLOTS (load BEFORE rendering) ──
     await syncPlotsFromCloud();
     showSyncBanner('✅ Synced!', true);
@@ -953,33 +979,116 @@ function checkGeofence(lat,lng){
 
 // Start location tracking for non-admin users
 let geoWatchId = null;
+let _lastLocPush = 0;
+
+function setLocIndicator(text, color){
+  const ind = document.getElementById('locationIndicator');
+  if(ind){ ind.textContent=text; ind.style.color=color; }
+}
+
+function pushLocToCloud(locData){
+  const now = Date.now();
+  if(supabaseReady && now - _lastLocPush > 30000){
+    _lastLocPush = now;
+    db.from('app_users').upsert({id:'loc_'+locData.uid, data: JSON.stringify(locData)}, {onConflict:'id'})
+      .catch(e=>console.warn('loc push failed:',e.message));
+  }
+}
+
+function handleGPSPos(pos){
+  const {latitude:lat, longitude:lng, accuracy} = pos.coords;
+  const inOffice = checkGeofence(lat, lng);
+  const userObj = (USERS[currentRole]||[]).find(u=>u.name===currentUser);
+  const uid = userObj ? userObj.id : ('u_'+currentUser);
+  const locData = { uid, name:currentUser, role:currentRole, lat, lng, inOffice,
+    lastSeen: new Date().toISOString(), accuracy: Math.round(accuracy||0) };
+  locationLogs[uid] = locData;
+  saveLocs();
+  pushLocToCloud(locData);
+  if(inOffice===null) setLocIndicator('📍 Locating...','var(--muted2)');
+  else if(inOffice)   setLocIndicator('🏢 In Office','var(--green)');
+  else                setLocIndicator('🚗 Outside','var(--gold)');
+}
+
+function handleGPSErr(err){
+  console.warn('GPS error code:', err.code, err.message);
+  if(err.code===1){
+    setLocIndicator('📍 Tap to allow GPS','var(--red)');
+    const ind = document.getElementById('locationIndicator');
+    if(ind){ ind.style.cursor='pointer'; ind.onclick=()=>requestGPS(); }
+    showGPSBanner();
+  } else {
+    // code 2 (unavailable) or 3 (timeout) — retry after delay
+    setLocIndicator('📍 Getting GPS...','var(--muted2)');
+    setTimeout(()=>startGPSWatch(false), 8000);
+  }
+}
+
+function requestGPS(){
+  setLocIndicator('📍 Requesting...','var(--muted2)');
+  // Use low accuracy first — this reliably triggers the browser permission popup
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ handleGPSPos(pos); startGPSWatch(true); },
+    err=>handleGPSErr(err),
+    {enableHighAccuracy:false, timeout:15000, maximumAge:60000}
+  );
+}
+
+function startGPSWatch(highAccuracy){
+  if(geoWatchId!==null){ navigator.geolocation.clearWatch(geoWatchId); geoWatchId=null; }
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos=>handleGPSPos(pos),
+    err=>handleGPSErr(err),
+    {enableHighAccuracy: !!highAccuracy, maximumAge:30000, timeout:30000}
+  );
+}
+
 function startLocationTracking(){
   if(currentRole==='admin') return;
-  if(!navigator.geolocation){ return; }
-  geoWatchId = navigator.geolocation.watchPosition(pos=>{
-    const {latitude:lat, longitude:lng} = pos.coords;
-    const inOffice = checkGeofence(lat, lng);
-    // Always use user id as key
-    const userObj = USERS[currentRole].find(u=>u.name===currentUser);
-    const uid = userObj ? userObj.id : ('u_'+currentUser);
-    locationLogs[uid] = {
-      uid, name: currentUser, role: currentRole,
-      lat, lng, inOffice,
-      lastSeen: new Date().toISOString(),
-      accuracy: pos.coords.accuracy
-    };
-    saveLocs();
-    // Update topbar indicator
-    const ind = document.getElementById('locationIndicator');
-    if(ind){
-      if(inOffice===null){ ind.textContent='📍 Locating...'; ind.style.color='var(--muted2)'; }
-      else if(inOffice){ ind.textContent='🏢 In Office'; ind.style.color='var(--green)'; }
-      else { ind.textContent='🚗 Outside'; ind.style.color='var(--gold)'; }
-    }
-  }, err=>{
-    const ind = document.getElementById('locationIndicator');
-    if(ind){ ind.textContent='📍 No GPS'; ind.style.color='var(--red)'; }
-  }, {enableHighAccuracy:true, maximumAge:15000, timeout:15000});
+  if(!navigator.geolocation){ setLocIndicator('GPS N/A','var(--muted2)'); return; }
+  setLocIndicator('📍 Locating...','var(--muted2)');
+  // Step 1: low-accuracy first to get permission prompt on mobile
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ handleGPSPos(pos); startGPSWatch(true); },
+    err=>handleGPSErr(err),
+    {enableHighAccuracy:false, timeout:15000, maximumAge:60000}
+  );
+}
+
+function showGPSBanner(){
+  if(document.getElementById('gpsBanner')) return;
+  const div = document.createElement('div');
+  div.id='gpsBanner';
+  div.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--card);border:1.5px solid rgba(240,92,92,.4);border-radius:16px;padding:16px;z-index:9999;max-width:320px;width:90%;box-shadow:0 6px 24px rgba(0,0,0,.4);text-align:center';
+  div.innerHTML=`<div style="font-size:1.6rem;margin-bottom:8px">📍</div>
+    <div style="font-size:.9rem;font-weight:700;margin-bottom:6px">Enable Location</div>
+    <div style="font-size:.75rem;color:var(--muted2);margin-bottom:14px">Your admin uses GPS for attendance tracking. Tap below to allow.</div>
+    <button onclick="document.getElementById('gpsBanner').remove();requestGPS();"
+      style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:12px;font-size:.88rem;font-weight:700;cursor:pointer;margin-bottom:8px">
+      📍 Allow Location Access
+    </button>
+    <button onclick="document.getElementById('gpsBanner').remove()"
+      style="width:100%;background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.8rem;color:var(--muted2);cursor:pointer">
+      Not now
+    </button>`;
+  document.body.appendChild(div);
+  // Auto-dismiss after 15s
+  setTimeout(()=>{ const b=document.getElementById('gpsBanner'); if(b) b.remove(); }, 15000);
+}
+
+// Load all team locations from Supabase (for admin)
+async function loadTeamLocations(){
+  if(!supabaseReady) return;
+  try {
+    const { data } = await db.from('app_users').select('id,data').like('id','loc_%');
+    if(!data) return;
+    data.forEach(row => {
+      try {
+        const loc = typeof row.data==='string' ? JSON.parse(row.data) : row.data;
+        if(loc && loc.uid) locationLogs[loc.uid] = loc;
+      } catch(e){}
+    });
+  } catch(e){ console.warn('loadTeamLocations:',e.message); }
 }
 // Round-robin pointer: tracks which manager gets the next lead
 let rrIndex = parseInt(localStorage.getItem('ycrm_rr')||'0');
@@ -1136,6 +1245,7 @@ async function doLogin(){
   buildNav();
   goPage('dashboard', document.querySelector('.nav-btn'));
   startLocationTracking();
+  if(currentRole==='admin') loadTeamLocations();
   // Init cloud sync after login
   syncFromCloud().then(()=>{ startRealtimeSync(); });
 }
@@ -4113,10 +4223,19 @@ async function loadFromFirebase() {
       console.warn('⚠️ No leads returned from cloud — check Supabase RLS policies');
     }
 
-    // Step 4: Load call logs
-    const _clr = await fetch(SUPA_URL+'/rest/v1/call_logs?select=*',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
-    if(_clr.ok){ const _cld=await _clr.json();
-      if(Array.isArray(_cld)&&_cld.length>0){ callLogs=_cld.map(r=>typeof r.data==='string'?JSON.parse(r.data):r.data); localStorage.setItem('ycrm_calls',JSON.stringify(callLogs)); } }
+    // Step 4: Load call logs — merge cloud + local
+    const { data: _cld } = await db.from('call_logs').select('*');
+    if(_cld && _cld.length > 0){
+      const parsedC = _cld.map(r=>{ try{ return typeof r.data==='string'?JSON.parse(r.data):r.data; }catch(e){return null;} }).filter(Boolean);
+      const mergedC = {};
+      parsedC.forEach(c=>{ if(c&&c.id) mergedC[c.id]=c; });
+      callLogs.forEach(c=>{ if(c&&c.id&&!mergedC[c.id]) mergedC[c.id]=c; });
+      callLogs = Object.values(mergedC).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+      // Push any local-only calls to cloud
+      const localOnly = callLogs.filter(c => !parsedC.find(p=>p&&p.id===c.id));
+      if(localOnly.length > 0) localOnly.forEach(c => saveCallLog(c));
+    }
 
   } catch(e) {
     console.error('Cloud load error:', e);
@@ -4263,12 +4382,7 @@ setTimeout(initInstallBar, 1000);
 // ══ RESTORED FUNCTIONS ══
 
 function callToRow(c){
-  return {
-    id: c.id, lead_id: c.leadId, agent: c.agent,
-    outcome: c.outcome, status_changed: c.statusChanged||null,
-    followup: c.followup||'', notes: c.notes||'',
-    date: c.date||'', time: c.time||''
-  };
+  return { id: c.id, data: JSON.stringify(c) };
 }
 
 function dialPadCall(){
