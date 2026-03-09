@@ -852,13 +852,9 @@ let CRM_CONFIG = JSON.parse(localStorage.getItem('ycrm_config')||'null') || {
     {id:'Cold',  label:'❄️ Cold',   color:'#2f6fbd'},
     {id:'Closed',label:'✅ Closed', color:'#1a9e6e'},
   ],
-  leadSources: [
-    'Purchased Data','Reference','Website','Walk-in','Social Media','IVR Call','Other'
-  ],
-  plotSizes: [
-    '50 sqm','100 sqm','150 sqm','200 sqm','250 sqm','300 sqm','500 sqm','1000 sqm','Other'
-  ],
-  businessType: 'Plots (sqm)', // shown as label
+  leadSources: [],
+  plotSizes: [],
+  businessType: '',
 };
 function saveConfig(){
   localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG));
@@ -922,39 +918,48 @@ async function loadConfig(){
   if(!supabaseReady) return;
   // Load CRM config
   try {
-    const cfgRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.crm_config&select=data', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(cfgRes.ok){
-      const cfgRows = await cfgRes.json();
-      const lcRow = cfgRows && cfgRows[0];
-      if(lcRow && lcRow.data){
-        const parsed = typeof lcRow.data==='string' ? JSON.parse(lcRow.data) : lcRow.data;
-        if(parsed.config) { CRM_CONFIG = parsed.config; localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG)); }
-        if(parsed.stages) { followupStages = parsed.stages; localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
-      }
+    const { data: cfgRows } = await db.from('app_users').select('data').eq('id','crm_config');
+    const lcRow = cfgRows && cfgRows[0];
+    if(lcRow && lcRow.data){
+      const parsed = typeof lcRow.data==='string' ? JSON.parse(lcRow.data) : lcRow.data;
+      if(parsed.config) { CRM_CONFIG = parsed.config; localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG)); }
+      if(parsed.stages) { followupStages = parsed.stages; localStorage.setItem('ycrm_stages', JSON.stringify(followupStages)); }
     }
   } catch(e){ console.warn('loadConfig:', e.message); }
 
-  // Load plots directly from plots table
+  // ── Migration: remove old hardcoded defaults if still present ──
+  const oldSqm = ['50 sqm','100 sqm','150 sqm','200 sqm','250 sqm','300 sqm','500 sqm','1000 sqm'];
+  if(CRM_CONFIG.plotSizes && CRM_CONFIG.plotSizes.some(s=>oldSqm.includes(s))){
+    CRM_CONFIG.plotSizes = CRM_CONFIG.plotSizes.filter(s=>!oldSqm.includes(s)&&s!=='Other');
+    localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG));
+    pushConfig();
+  }
+  const oldSources = ['Purchased Data','Reference','Website','Walk-in','Social Media','IVR Call','Other'];
+  if(CRM_CONFIG.leadSources && CRM_CONFIG.leadSources.length>0 && CRM_CONFIG.leadSources.every(s=>oldSources.includes(s))){
+    CRM_CONFIG.leadSources = [];
+    localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG));
+    pushConfig();
+  }
+  if(CRM_CONFIG.businessType === 'Plots (sqm)'){
+    CRM_CONFIG.businessType = '';
+    localStorage.setItem('ycrm_config', JSON.stringify(CRM_CONFIG));
+    pushConfig();
+  }
+
+  // Load plots
   try {
-    const plotsRes = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(plotsRes.ok){
-      const cloudPlots = await plotsRes.json();
-      if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
-        plots = cloudPlots.map(p => ({
-          id: p.id,
-          sector: p.sector || '',
-          size: p.size || '',
-          price: p.price || '',
-          status: p.status || 'Available',
-          plotDescription: p['plot description'] || p['plot_description'] || p.plotDescription || ''
-        }));
-        localStorage.setItem('ycrm_plots', JSON.stringify(plots));
-        console.log('✅ Plots from cloud:', plots.length);
-      }
+    const { data: cloudPlots } = await db.from('plots').select('*');
+    if(Array.isArray(cloudPlots) && cloudPlots.length > 0){
+      plots = cloudPlots.map(p => ({
+        id: p.id,
+        sector: p.sector || '',
+        size: p.size || '',
+        price: p.price || '',
+        status: p.status || 'Available',
+        plotDescription: p['plot description'] || p['plot_description'] || p.plotDescription || ''
+      }));
+      localStorage.setItem('ycrm_plots', JSON.stringify(plots));
+      console.log('✅ Plots from cloud:', plots.length);
     }
   } catch(e){ console.warn('loadPlots:', e.message); }
 }
@@ -1415,11 +1420,72 @@ function renderDashboard(){
     +'<div class="stat-card" style="cursor:pointer" onclick="showLeadListModal(\'All\',\'📋 All My Leads\')"><div class="stat-label">&#x1F4CB; Total Leads</div><div class="stat-value">'+ml.length+'</div><div class="stat-sub">Tap to view</div></div>'
     +'</div>'
     + plotStats
+    + (currentRole==='admin' ? adminLiveSection() : '')
     +'<div class="section-title">&#x23F0; Today\'s Follow-ups</div>'
     + followupHTML
     + teamSection;
 }
 
+function adminLiveSection(){
+  const today = new Date().toISOString().slice(0,10);
+
+  // Live call activity per staff today
+  const allStaff = [...USERS.manager,...USERS.executive].filter(u=>u.active);
+  const liveRows = allStaff.map(u=>{
+    const n = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+    const isManager = !!USERS.manager.find(x=>x.id===u.id);
+    const color = isManager ? 'var(--blue)' : 'var(--green)';
+    const bg    = isManager ? 'rgba(77,142,240,.15)' : 'rgba(34,201,138,.15)';
+    const role  = isManager ? 'Manager' : 'Executive';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="width:32px;height:32px;border-radius:50%;background:'+bg+';color:'+color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:.8rem;flex-shrink:0">'+u.name[0]+'</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div><div style="font-size:.6rem;color:var(--muted2)">'+role+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:1.1rem;font-weight:800;font-family:Syne,sans-serif;color:'+(n>0?color:'var(--muted)')+'">'+n+'</div><div style="font-size:.58rem;color:var(--muted)">calls today</div></div>'
+      +'</div>';
+  }).join('');
+
+  // Interested leads = Hot/Warm manager leads with stage info
+  const interested = leads.filter(l=>
+    l.assignedRole==='manager' && (l.status==='Hot'||l.status==='Warm'||l.followupStage)
+  ).sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0));
+
+  const stageLabel = s => {
+    if(!s) return '';
+    const found = followupStages.find(x=>x.id===s);
+    return found ? found.icon+' '+found.label : s;
+  };
+
+  const intRows = interested.slice(0,15).map(l=>{
+    const stage = stageLabel(l.followupStage);
+    const mgr   = l.assignedManager||l.assigned||'—';
+    return '<div onclick="openLead(\''+l.id+'\')" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:var(--surface);margin-bottom:6px;cursor:pointer;border:1px solid var(--border)">'
+      +'<div style="width:36px;height:36px;border-radius:50%;background:'+sColor(l.status)+'22;color:'+sColor(l.status)+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+l.name[0]+'</div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:.85rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+l.name+'</div>'
+      +'<div style="font-size:.66rem;color:var(--muted2)">📞 '+l.phone+(l.interest&&l.interest!=='Not decided'?' · '+l.interest:'')+'</div>'
+      +(stage?'<div style="font-size:.62rem;color:var(--gold);margin-top:1px">'+stage+' · 👔 '+mgr+'</div>':'<div style="font-size:.62rem;color:var(--muted);margin-top:1px">👔 '+mgr+'</div>')
+      +'</div>'
+      +'<span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span>'
+      +'</div>';
+  }).join('');
+
+  const totalCalls = callLogs.filter(c=>c.date===today).length;
+
+  return '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between">'
+    +'<span>📞 Live Call Activity</span>'
+    +'<span style="font-size:.7rem;font-weight:700;color:var(--gold);background:rgba(232,160,32,.12);border:1px solid rgba(232,160,32,.25);border-radius:10px;padding:2px 10px">'+totalCalls+' today</span>'
+    +'</div>'
+    +'<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:14px">'
+    +(allStaff.length===0?'<div style="font-size:.78rem;color:var(--muted);text-align:center;padding:8px">No active team</div>':liveRows)
+    +'</div>'
+    +'<div class="section-title" style="display:flex;align-items:center;justify-content:space-between">'
+    +'<span>🔥 Interested Leads</span>'
+    +'<span style="font-size:.7rem;color:var(--muted2)">'+interested.length+' total</span>'
+    +'</div>'
+    +(interested.length===0
+      ?'<div class="empty"><div class="empty-icon">📭</div>No interested leads yet</div>'
+      :intRows+(interested.length>15?'<div style="text-align:center;font-size:.72rem;color:var(--muted2);padding:6px">...and '+(interested.length-15)+' more</div>':''));
+}
 
 function showLeadListModal(statusFilter, title){
   const filtered = statusFilter === 'All' ? myLeads() : myLeads().filter(l => l.status === statusFilter);
@@ -2327,19 +2393,19 @@ function adminTeamHTML(){
   }).join('');
 
   // ── FILTER TABS ──
-  const tabs = ['All','manager','executive'];
-  const activeFilter = window._adminLeadFilter || 'All';
+  const tabs = ['manager','executive','All'];
+  const activeFilter = window._adminLeadFilter || 'manager';
   const filteredLeads = activeFilter==='All' ? leads : leads.filter(l=>l.assignedRole===activeFilter);
   const filteredRows = filteredLeads.map(l=>{
     const statusColor = sColor(l.status);
     const isColdData = l.assignedRole==='executive';
     const assignedTo = isColdData
-      ? (l.assigned||'—') + ' <span style="font-size:.58rem;color:var(--muted2);background:rgba(150,150,150,.12);border-radius:6px;padding:1px 5px">Cold</span>'
-      : (l.assignedManager||l.assigned||'—') + ' <span style="font-size:.58rem;color:var(--blue);background:rgba(77,142,240,.12);border-radius:6px;padding:1px 5px">Lead</span>';
+      ? (l.assigned||'—')
+      : (l.assignedManager||l.assigned||'—');
     return '<div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:.75rem">'
       +'<div><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+l.name+'</div>'
-      +'<div style="font-size:.62rem;color:var(--muted2)">'+l.phone+' · '+(l.generatedBy||'Admin')+'</div></div>'
-      +'<div style="font-size:.7rem">'+assignedTo+'</div>'
+      +'<div style="font-size:.62rem;color:var(--muted2)">'+l.phone+'</div></div>'
+      +'<div style="font-size:.7rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+assignedTo+'</div>'
       +'<span style="font-size:.58rem;font-weight:700;padding:2px 6px;border-radius:8px;white-space:nowrap;background:'+statusColor+'18;color:'+statusColor+';border:1px solid '+statusColor+'33">'+l.status+'</span>'
       +'<button onclick="deleteLead(\''+l.id+'\')" style="background:none;border:1px solid rgba(240,92,92,.3);border-radius:6px;color:var(--red);cursor:pointer;font-size:.75rem;padding:3px 8px" title="Delete">🗑️</button>'
       +'</div>';
@@ -2353,16 +2419,18 @@ function adminTeamHTML(){
     +(leads.length>0?'<button onclick="if(confirm(\'Delete ALL '+leads.length+' leads? This cannot be undone!\')){if(confirm(\'FINAL WARNING: This deletes all leads from cloud too. Are you sure?\')){leads=[];save();fetch(SUPA_URL+\'/rest/v1/leads?id=neq.__none__\',{method:\'DELETE\',headers:{\'apikey\':SUPA_KEY,\'Authorization\':\'Bearer \'+SUPA_KEY}});renderAdminPanel();renderDashboard();showToast(\'All leads deleted\');}}" style="background:none;border:1px solid rgba(240,92,92,.3);border-radius:6px;color:var(--red);cursor:pointer;font-size:.68rem;padding:3px 8px">🗑️ Clear All</button>':'')
     +'</div>'
     +'</div>'
-    +'<div style="display:flex;gap:6px;margin-bottom:10px">'
-    +tabs.map(t=>'<div onclick="window._adminLeadFilter=\''+t+'\';switchAdminTab(\'team\')" style="cursor:pointer;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:600;border:1.5px solid '+(activeFilter===t?'var(--gold)':'var(--border)')+';background:'+(activeFilter===t?'rgba(232,160,32,.1)':'var(--surface)')+';color:'+(activeFilter===t?'var(--gold)':'var(--muted2)')+'">'+( t==='All'?'All ('+leads.length+')':t==='manager'?'🔥 Leads → Manager ('+leads.filter(l=>l.assignedRole==='manager').length+')':'❄️ Cold Data ('+leads.filter(l=>l.assignedRole==='executive').length+')')+'</div>').join('')
+    +'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+    +tabs.map(t=>'<div onclick="window._adminLeadFilter=\''+t+'\';switchAdminTab(\'team\')" style="cursor:pointer;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:600;border:1.5px solid '+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--border)')+';background:'+(activeFilter===t?(t==='executive'?'rgba(150,150,150,.1)':'rgba(232,160,32,.1)'):'var(--surface)')+';color:'+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--muted2)')+'">'+( t==='All'?'All ('+leads.length+')':t==='manager'?'🔥 Hot Leads ('+leads.filter(l=>l.assignedRole==='manager').length+')':'❄️ Cold Data ('+leads.filter(l=>l.assignedRole==='executive').length+')')+'</div>').join('')
     +'</div>'
     +'<div style="grid-template-columns:1fr 1fr auto auto;gap:6px;padding:6px 0;border-bottom:2px solid var(--border2);margin-bottom:4px;display:grid">'
     +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Customer</div>'
-    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Assigned To</div>'
+    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+(activeFilter==='executive'?'Executive':'Manager')+'</div>'
     +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Status</div>'
     +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Del</div>'
     +'</div>'
-    +(filteredLeads.length===0?'<div style="text-align:center;color:var(--muted);padding:20px 0;font-size:.82rem">No leads yet</div>':filteredRows)
+    +(filteredLeads.length===0
+      ?'<div style="text-align:center;color:var(--muted);padding:20px 0;font-size:.82rem">'+(activeFilter==='executive'?'No cold data uploaded yet':'No hot leads yet')+'</div>'
+      :filteredRows)
     +'</div>';
 
   return leadsTable + buildAdminReassignHTML() + buildAdminTeamPerfHTML();
@@ -3236,26 +3304,64 @@ function saveUserPassFromSettings(uid, role){
 
 // ─── MANAGER PANEL ───
 function renderManagerPanel(){
-  // Manager sees: leads assigned to them by admin + leads from executives
   const myL = leads.filter(l =>
     l.assignedManager === currentUser ||
     (l.assigned === currentUser && l.assignedRole === 'manager') ||
     l.transferredTo === currentUser
   );
-  const hot=myL.filter(l=>l.status==='Hot').length;
-  const closed=myL.filter(l=>l.status==='Closed').length;
-  const pending=myL.filter(l=>l.status==='transferred').length;
+  const today = new Date().toISOString().slice(0,10);
+  const hot     = myL.filter(l=>l.status==='Hot').length;
+  const closed  = myL.filter(l=>l.status==='Closed').length;
+  const pending = myL.filter(l=>l.status==='transferred').length;
+  const todayCalls = callLogs.filter(c=>c.agent===currentUser&&c.date===today).length;
+
+  // Pipeline by followup stage
+  const stageCards = followupStages.map(s=>{
+    const stagLeads = myL.filter(l=>l.followupStage===s.id);
+    if(stagLeads.length===0) return '';
+    return '<div style="margin-bottom:10px">'
+      +'<div style="font-size:.72rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:flex;align-items:center;gap:6px">'
+      +'<span style="font-size:.85rem">'+s.icon+'</span> '+s.label
+      +' <span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1px 7px;font-size:.62rem;color:var(--gold)">'+stagLeads.length+'</span>'
+      +'</div>'
+      +stagLeads.map(l=>'<div onclick="openLead(\''+l.id+'\')" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:var(--surface);margin-bottom:5px;cursor:pointer;border:1px solid var(--border)">'
+        +'<div style="width:34px;height:34px;border-radius:50%;background:'+sColor(l.status)+'22;color:'+sColor(l.status)+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+l.name[0]+'</div>'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+l.name+'</div>'
+        +'<div style="font-size:.65rem;color:var(--muted2)">📞 '+l.phone+(l.interest&&l.interest!=='Not decided'?' · '+l.interest:'')+'</div>'
+        +(l.followup?'<div style="font-size:.62rem;color:var(--muted)">📅 Follow-up: '+l.followup+'</div>':'')
+        +'</div>'
+        +'<span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span>'
+        +'</div>').join('')
+      +'</div>';
+  }).join('');
+
+  const noStageLeads = myL.filter(l=>l.status==='Hot'&&!l.followupStage);
 
   document.getElementById('page-more').innerHTML=`
     <div class="section-title" style="margin-top:0">My Pipeline</div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">My Leads</div><div class="stat-value gold">${myL.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Pending Review</div><div class="stat-value blue">${pending}</div></div>
-      <div class="stat-card"><div class="stat-label">Hot</div><div class="stat-value red">${hot}</div></div>
-      <div class="stat-card"><div class="stat-label">Closed</div><div class="stat-value green">${closed}</div></div>
+      <div class="stat-card"><div class="stat-label">📋 Total Leads</div><div class="stat-value gold">${myL.length}</div></div>
+      <div class="stat-card"><div class="stat-label">📞 Calls Today</div><div class="stat-value blue">${todayCalls}</div></div>
+      <div class="stat-card"><div class="stat-label">🔥 Hot</div><div class="stat-value red">${hot}</div></div>
+      <div class="stat-card"><div class="stat-label">✅ Closed</div><div class="stat-value green">${closed}</div></div>
     </div>
-    <div class="section-title">🔥 Leads from Executives</div>
-    <div style="font-size:.75rem;color:var(--muted2);margin-bottom:8px">Cold data converted to leads by your executives</div>
+
+    <div class="section-title">📊 Pipeline by Stage</div>
+    ${stageCards || '<div style="color:var(--muted2);font-size:.8rem;padding:8px 0">No leads with stages set yet. Open a lead and set a follow-up stage.</div>'}
+
+    ${noStageLeads.length>0?`
+    <div class="section-title" style="margin-top:14px">🔥 Hot — Stage Not Set (${noStageLeads.length})</div>
+    ${noStageLeads.map(l=>`<div onclick="openLead('${l.id}')" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:var(--surface);margin-bottom:5px;cursor:pointer;border:1px solid var(--border)">
+      <div style="width:34px;height:34px;border-radius:50%;background:${sColor(l.status)}22;color:${sColor(l.status)};display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">${l.name[0]}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.name}</div>
+        <div style="font-size:.65rem;color:var(--muted2)">📞 ${l.phone}</div>
+      </div>
+      <span class="badge hot">Hot</span>
+    </div>`).join('')}`:''}
+
+    <div class="section-title" style="margin-top:14px">🔔 New from Executives ${pending>0?'('+pending+')':''}</div>
     ${leads.filter(l=>l.transferredTo===currentUser&&l.convertedFromColdData).length===0
       ?'<div class="empty"><div class="empty-icon">📭</div>No transferred leads yet</div>'
       :leads.filter(l=>l.transferredTo===currentUser&&l.convertedFromColdData).map(l=>`
@@ -3263,8 +3369,7 @@ function renderManagerPanel(){
           <div class="transfer-label">🔥 Generated by ${l.generatedBy||'Executive'}</div>
           <div class="transfer-name">${l.name}</div>
           <div class="transfer-detail">📞 ${l.phone} ${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''} · <span class="badge ${l.status.toLowerCase()}">${l.status}</span></div>
-        </div>`).join('')
-    }
+        </div>`).join('')}
   `;
 }
 
@@ -3695,8 +3800,8 @@ async function importLeads(){
     const newId = 'L' + (now + i) + Math.random().toString(36).slice(2,7);
     leads.push({
       id: newId, name: r.name.trim(), phone: r.phone.trim(), phone2: '',
-      source: r.source || CRM_CONFIG.leadSources[0] || 'Purchased Data',
-      interest: r.interest || 'Not decided',
+      source: r.source || CRM_CONFIG.leadSources[0] || '',
+      interest: r.interest || '',
       status: 'Cold', assigned: exec.name, assignedRole: 'executive',
       assignedManager: null, transferredTo: '',
       generatedBy: 'Bulk Upload', generatedByRole: 'admin',
