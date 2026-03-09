@@ -604,9 +604,10 @@ async function syncFromCloud(){
       leads = Object.values(merged).sort((a,b)=> new Date(b.createdAt||0)-new Date(a.createdAt||0));
       localStorage.setItem('ycrm_leads', JSON.stringify(leads));
     }
-    // ── CALL LOGS — merge cloud + local (never lose calls) ──
-    const cloudCalls = await dbGet('call_logs');
-    if(cloudCalls && cloudCalls.length > 0){
+    // ── CALL LOGS — read from app_users table (cl_ prefix) ──
+    const { data: _callRows } = await db.from('app_users').select('id,data').like('id','cl_%');
+    const cloudCalls = _callRows || [];
+    if(cloudCalls.length > 0){
       const parsed = cloudCalls
         .map(r => { try{ return typeof r.data==='string' ? JSON.parse(r.data) : r.data; }catch(e){ return null; } })
         .filter(Boolean);
@@ -743,7 +744,9 @@ async function loadAllLeadsFromCloud(){
 // Push all call logs to cloud (push latest only)
 async function pushCallLog(log){
   if(!supabaseReady) return;
-  await dbUpsert('call_logs', {id: log.id, data: JSON.stringify(log)});
+  try{
+    await db.from('app_users').upsert({id:'cl_'+log.id, data:JSON.stringify(log)},{onConflict:'id'});
+  }catch(e){ console.warn('pushCallLog:',e.message); }
 }
 
 // Push users to cloud
@@ -1239,7 +1242,7 @@ async function doLogin(){
   const rb = document.getElementById('roleBadge');
   rb.textContent = currentRole.charAt(0).toUpperCase()+currentRole.slice(1);
   rb.className = 'role-badge '+currentRole;
-  document.getElementById('call-followup').value = new Date().toISOString().slice(0,10);
+  document.getElementById('call-followup').value = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
   const locInd = document.getElementById('locationIndicator');
   if(locInd) locInd.style.display = currentRole!=='admin' ? 'inline' : 'none';
   buildNav();
@@ -1345,7 +1348,7 @@ function renderDashboard(){
   const ml = myLeads();
   const hot = ml.filter(l=>l.status==='Hot').length;
   const closed = ml.filter(l=>l.status==='Closed').length;
-  const today = new Date().toISOString().slice(0,10);
+  const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
   const todayCalls = callLogs.filter(c=>c.date===today&&(currentRole==='admin'||c.agent===currentUser)).length;
   const avail = plots.filter(p=>p.status==='Available').length;
   const booked = plots.filter(p=>p.status!=='Available').length;
@@ -1545,7 +1548,7 @@ function renderDashboard(){
 }
 
 function adminLiveSection(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
 
   // Live call activity per staff today
   const allStaff = [...USERS.manager,...USERS.executive].filter(u=>u.active);
@@ -2065,7 +2068,7 @@ function renderAddForm(){
       <select class="form-select" id="f-status">${statusOpts}</select>
     </div>
     ${adminAssignSection}
-    <div class="form-group"><label class="form-label">Follow-up Date</label><input class="form-input" id="f-followup" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="form-group"><label class="form-label">Follow-up Date</label><input class="form-input" id="f-followup" type="date" value="${(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()}"></div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="f-notes" placeholder="Customer requirements or remarks..."></textarea></div>
     <br><button class="btn-primary" onclick="addLead()">✅ Save Lead</button>
   `;
@@ -2382,7 +2385,7 @@ function renderAdminPanel(){
 function switchAdminTab(tab){adminTab=tab;renderAdminPanel();}
 
 function adminReportsHTML(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
   const execs = USERS.executive.filter(u=>u.active);
   const mgrs  = USERS.manager.filter(u=>u.active);
 
@@ -2497,7 +2500,7 @@ function exportFullReport(){
   const rows = leads.map(l=>
     `"${l.name}","${l.phone}","${l.source||''}","${l.interest||''}","${l.status||''}","${l.assigned||''}","${l.assignedRole||''}","${l.assignedManager||''}","${l.callCount||0}","${l.followup||''}","${(l.notes||'').replace(/"/g,"'")}","${l.createdAt||''}"`
   ).join('\n');
-  downloadCSV('skd_full_report_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  downloadCSV('skd_full_report_'+(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()+'.csv', header+rows);
   showToast('📊 Full report downloaded!');
 }
 
@@ -2507,12 +2510,12 @@ function exportCallReport(){
     const lead = leads.find(l=>l.id===c.leadId);
     return `"${c.date||''}","${c.time||''}","${c.agent||''}","${lead?lead.name:'Unknown'}","${lead?lead.phone:''}","${c.outcome||''}","${c.followup||''}","${(c.notes||'').replace(/"/g,"'")}"`;
   }).join('\n');
-  downloadCSV('skd_call_logs_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  downloadCSV('skd_call_logs_'+(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()+'.csv', header+rows);
   showToast('📞 Call log downloaded!');
 }
 
 function exportExecReport(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
   const header = 'Executive,Total Assigned,Called,Pending,Today Calls,Interested,Coverage %\n';
   const rows = USERS.executive.filter(u=>u.active).map(e=>{
     const myL = leads.filter(l=>l.assigned===e.name&&l.assignedRole==='executive');
@@ -2523,7 +2526,7 @@ function exportExecReport(){
     const pct = myL.length ? Math.round(called/myL.length*100) : 0;
     return `"${e.name}","${myL.length}","${called}","${fresh}","${todayC}","${interested}","${pct}%"`;
   }).join('\n');
-  downloadCSV('skd_exec_report_'+new Date().toISOString().slice(0,10)+'.csv', header+rows);
+  downloadCSV('skd_exec_report_'+(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()+'.csv', header+rows);
   showToast('👥 Executive report downloaded!');
 }
 
@@ -2855,7 +2858,7 @@ async function saveNewUser(){
   if(pass!==pass2){showToast('Passwords do not match','error');return;}
   const allNames=[...USERS.manager,...USERS.executive,...USERS.admin].map(u=>u.name.toLowerCase());
   if(allNames.includes(name.toLowerCase())){showToast('User already exists','error');return;}
-  const newUser={id:'u_'+Date.now(),name,pass,phone,email,active:true,createdAt:new Date().toISOString().slice(0,10)};
+  const newUser={id:'u_'+Date.now(),name,pass,phone,email,active:true,createdAt:(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()};
   USERS[role].push(newUser);
   localStorage.setItem('ycrm_users', JSON.stringify(USERS));
   showToast('⏳ Saving user...');
@@ -3469,7 +3472,7 @@ function renderManagerPanel(){
     (l.assigned === currentUser && l.assignedRole === 'manager') ||
     l.transferredTo === currentUser
   );
-  const today = new Date().toISOString().slice(0,10);
+  const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
   const hot     = myL.filter(l=>l.status==='Hot').length;
   const closed  = myL.filter(l=>l.status==='Closed').length;
   const pending = myL.filter(l=>l.status==='transferred').length;
@@ -3809,7 +3812,7 @@ function saveCall(){
     outcome, statusChanged:null,
     followup:document.getElementById('call-followup').value,
     notes:document.getElementById('call-notes').value.trim(),
-    date:now.toISOString().slice(0,10),
+    date: now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0'),
     time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})
   };
   // Auto-update lead status based on outcome
@@ -4223,8 +4226,8 @@ async function loadFromFirebase() {
       console.warn('⚠️ No leads returned from cloud — check Supabase RLS policies');
     }
 
-    // Step 4: Load call logs — merge cloud + local
-    const { data: _cld } = await db.from('call_logs').select('*');
+    // Step 4: Load call logs — from app_users (cl_ prefix)
+    const { data: _cld } = await db.from('app_users').select('id,data').like('id','cl_%');
     if(_cld && _cld.length > 0){
       const parsedC = _cld.map(r=>{ try{ return typeof r.data==='string'?JSON.parse(r.data):r.data; }catch(e){return null;} }).filter(Boolean);
       const mergedC = {};
@@ -4453,7 +4456,7 @@ function openManualCallLog(phone, existingLead){
       <textarea class="form-textarea" id="mcl-notes" placeholder="What did they say?" style="height:70px"></textarea>
     </div>
     <div class="form-group"><label class="form-label">Follow-up Date</label>
-      <input class="form-input" id="mcl-followup" type="date" value="${new Date().toISOString().slice(0,10)}" style="margin-bottom:0">
+      <input class="form-input" id="mcl-followup" type="date" value="${(()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})()}" style="margin-bottom:0">
     </div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn-primary" style="flex:1" onclick="saveManualCallLog('${phone}','${existingLead?existingLead.id:''}')">💾 Save Record</button>
@@ -4588,7 +4591,7 @@ async function factoryReset(){
   if(true){
     try{
       showToast('🔄 Clearing cloud data...');
-      await db.from('call_logs').delete().neq('id','__none__');
+      await db.from('app_users').delete().like('id','cl_%');
       await db.from('leads').delete().neq('id','__none__');
       await db.from('app_users').delete().neq('id','__none__');
       leads=[]; callLogs=[];
@@ -4668,8 +4671,12 @@ function rowToLead(r){
 function rowToUser(r){ return {id:r.id,name:r.name,pass:r.pass,phone:r.phone||'',email:r.email||'',active:r.active,createdAt:r.created_at||''}; }
 
 async function saveCallLog(c){
-  try{ await dbUpsert('call_logs', callToRow(c)); }
-  catch(e){ console.error('saveCallLog error:',e); }
+  if(!supabaseReady) return;
+  try{
+    // Store in app_users table (guaranteed has id+data columns) with prefix 'cl_'
+    const { error } = await db.from('app_users').upsert({id:'cl_'+c.id, data:JSON.stringify(c)},{onConflict:'id'});
+    if(error) console.warn('saveCallLog error:',error.message);
+  } catch(e){ console.error('saveCallLog exception:',e); }
 }
 
 async function saveLead(l){
@@ -4721,7 +4728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           rb.className = 'role-badge '+s.role;
           const locInd = document.getElementById('locationIndicator');
           if(locInd) locInd.style.display = s.role!=='admin' ? 'inline' : 'none';
-          document.getElementById('call-followup').value = new Date().toISOString().slice(0,10);
+          document.getElementById('call-followup').value = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
           buildNav();
           goPage('dashboard', document.querySelector('.nav-btn'));
           startLocationTracking();
