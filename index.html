@@ -615,6 +615,13 @@ async function syncFromCloud(){
       const merged = {};
       parsed.forEach(c => { if(c && c.id) merged[c.id] = c; });
       callLogs.forEach(c => { if(c && c.id && !merged[c.id]) merged[c.id] = c; });
+      // Normalize agent names (fix NEHA vs Neha etc.)
+      const _ku = [...(USERS.executive||[]),...(USERS.manager||[]),...(USERS.admin||[])];
+      Object.values(merged).forEach(c=>{
+        if(!c.agent) return;
+        const m = _ku.find(u=>(u.name||'').trim().toLowerCase()===(c.agent||'').trim().toLowerCase());
+        if(m && m.name !== c.agent) c.agent = m.name;
+      });
       callLogs = Object.values(merged).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
       localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
       // Push any local-only calls to cloud so they sync up
@@ -1232,7 +1239,7 @@ async function doLogin(){
   }
   // Use exact name from USERS object (not typed name) to prevent case mismatch with assigned leads
   const exactUserObj = USERS[currentRole].find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.active);
-  currentUser = exactUserObj ? exactUserObj.name : name;
+  currentUser = (exactUserObj ? exactUserObj.name : name).trim();
   // ── PERSIST SESSION — survive page refresh ──
   localStorage.setItem('ycrm_session', JSON.stringify({user: name, role: currentRole}));
   document.getElementById('loginScreen').style.display='none';
@@ -1349,7 +1356,7 @@ function renderDashboard(){
   const hot = ml.filter(l=>l.status==='Hot').length;
   const closed = ml.filter(l=>l.status==='Closed').length;
   const today = (()=>{const _d=new Date();return _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');})();
-  const todayCalls = callLogs.filter(c=>c.date===today&&(currentRole==='admin'||c.agent===currentUser)).length;
+  const todayCalls = callLogs.filter(c=>c.date===today&&(currentRole==='admin'||(c.agent||'').trim().toLowerCase()===(currentUser||'').trim().toLowerCase())).length;
   const avail = plots.filter(p=>p.status==='Available').length;
   const booked = plots.filter(p=>p.status!=='Available').length;
   const followups = ml.filter(l=>l.followup===today&&l.status!=='Closed');
@@ -1377,12 +1384,12 @@ function renderDashboard(){
       const uPending    = coldData.filter(l=>!l.callCount||l.callCount===0).length;
       const uCalled     = coldData.filter(l=>l.callCount>0).length;
       const uGenerated  = leads.filter(l=>l.generatedBy===u.name&&l.assignedRole==='manager').length;
-      const uCallsToday = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+      const uCallsToday = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()&&c.date===today).length;
       const pct         = coldData.length ? Math.round(uCalled/coldData.length*100) : 0;
       const activePill  = u.active
         ? 'background:rgba(34,201,138,.1);color:var(--green);border:1px solid rgba(34,201,138,.2)'
         : 'background:rgba(240,92,92,.1);color:var(--red);border:1px solid rgba(240,92,92,.2)';
-      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px">'
+      return '<div onclick="showUserReport(&quot;'+u.name+'&quot;,&quot;executive&quot;)" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px;cursor:pointer">'
         + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
         +   '<div style="width:38px;height:38px;border-radius:50%;background:rgba(34,201,138,.18);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
         +   '<div style="flex:1;min-width:0">'
@@ -1406,13 +1413,13 @@ function renderDashboard(){
     const buildMgrCard = (u) => {
       const uLeads      = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.assignedRole==='manager').length;
       const uHot        = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.status==='Hot').length;
-      const uCalls      = callLogs.filter(c=>c.agent===u.name).length;
-      const uCallsToday = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+      const uCalls      = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()).length;
+      const uCallsToday = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()&&c.date===today).length;
       const uClosed     = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.status==='Closed').length;
       const activePill  = u.active
         ? 'background:rgba(34,201,138,.1);color:var(--green);border:1px solid rgba(34,201,138,.2)'
         : 'background:rgba(240,92,92,.1);color:var(--red);border:1px solid rgba(240,92,92,.2)';
-      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px">'
+      return '<div onclick="showUserReport(&quot;'+u.name+'&quot;,&quot;manager&quot;)" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px;cursor:pointer">'
         + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
         +   '<div style="width:38px;height:38px;border-radius:50%;background:rgba(77,142,240,.18);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
         +   '<div style="flex:1;min-width:0">'
@@ -1553,7 +1560,7 @@ function adminLiveSection(){
   // Live call activity per staff today
   const allStaff = [...USERS.manager,...USERS.executive].filter(u=>u.active);
   const liveRows = allStaff.map(u=>{
-    const n = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+    const n = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()&&c.date===today).length;
     const isManager = !!USERS.manager.find(x=>x.id===u.id);
     const color = isManager ? 'var(--blue)' : 'var(--green)';
     const bg    = isManager ? 'rgba(77,142,240,.15)' : 'rgba(34,201,138,.15)';
@@ -1606,6 +1613,114 @@ function adminLiveSection(){
     +(interested.length===0
       ?'<div class="empty"><div class="empty-icon">📭</div>No interested leads yet</div>'
       :intRows+(interested.length>15?'<div style="text-align:center;font-size:.72rem;color:var(--muted2);padding:6px">...and '+(interested.length-15)+' more</div>':''));
+}
+
+function showUserReport(name, role){
+  const isExec = role === 'executive';
+  const color  = isExec ? 'var(--green)' : 'var(--blue)';
+  const bg     = isExec ? 'rgba(34,201,138,.15)' : 'rgba(77,142,240,.15)';
+
+  const userCalls = callLogs.filter(c => (c.agent||'').trim().toLowerCase()===(name||'').trim().toLowerCase());
+  const userLeads = isExec
+    ? leads.filter(l => l.assigned === name && l.assignedRole === 'executive')
+    : leads.filter(l => (l.assignedManager === name || l.assigned === name) && l.assignedRole === 'manager');
+
+  const _dn=new Date();
+  const today=_dn.getFullYear()+'-'+String(_dn.getMonth()+1).padStart(2,'0')+'-'+String(_dn.getDate()).padStart(2,'0');
+  const todayCalls = userCalls.filter(c => c.date === today).length;
+  const totalCalls = userCalls.length;
+
+  // Date-wise breakdown last 14 days
+  const dateMap = {};
+  userCalls.forEach(c => { if(c.date) dateMap[c.date] = (dateMap[c.date]||0)+1; });
+  const last14 = [];
+  for(let i=13;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    last14.push({date:k,label:d.getDate()+'/'+(d.getMonth()+1),count:dateMap[k]||0});
+  }
+  const maxBar = Math.max(...last14.map(d=>d.count),1);
+  const barChart = last14.map(d=>`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1"><div style="font-size:.58rem;color:${d.count>0?color:'transparent'};font-weight:700">${d.count||0}</div><div style="width:100%;background:var(--border);border-radius:3px;height:48px;display:flex;align-items:flex-end"><div style="width:100%;height:${Math.round(d.count/maxBar*100)}%;background:${d.date===today?'var(--gold)':color};border-radius:3px;min-height:${d.count>0?'3px':'0'}"></div></div><div style="font-size:.52rem;color:var(--muted2)">${d.label}</div></div>`).join('');
+
+  // Outcome breakdown
+  const outcomes = {};
+  userCalls.forEach(c=>{ if(c.outcome) outcomes[c.outcome]=(outcomes[c.outcome]||0)+1; });
+  const outcomeLabels = {not_picked:'Not Picked',switched_off:'Switched Off',no_network:'No Network',callback:'Call Back',not_interested:'Not Interested',interested:'Interested'};
+  const outcomeBars = Object.entries(outcomes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+    const pct=Math.round(v/totalCalls*100);
+    const oc=k==='interested'?'var(--green)':k==='callback'?'var(--gold)':k==='not_interested'?'var(--red)':'var(--muted2)';
+    return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:3px"><span>${outcomeLabels[k]||k}</span><span style="font-weight:700;color:${oc}">${v} <span style="color:var(--muted2);font-weight:400">(${pct}%)</span></span></div><div style="height:5px;background:var(--border);border-radius:3px"><div style="width:${pct}%;height:100%;background:${oc};border-radius:3px"></div></div></div>`;
+  }).join('');
+
+  // Role-specific stats block
+  let statsBlock = '';
+  if(isExec){
+    const pending=userLeads.filter(l=>!l.callCount||l.callCount===0).length;
+    const called=userLeads.filter(l=>l.callCount>0).length;
+    const generated=leads.filter(l=>l.generatedBy===name).length;
+    const pct=userLeads.length?Math.round(called/userLeads.length*100):0;
+    statsBlock=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      <div style="background:rgba(240,92,92,.07);border:1px solid rgba(240,92,92,.2);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--red)">${pending}</div><div style="font-size:.6rem;color:var(--red)">Pending</div></div>
+      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--green)">${called}</div><div style="font-size:.6rem;color:var(--muted2)">Called</div></div>
+      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${generated}</div><div style="font-size:.6rem;color:var(--muted2)">Generated</div></div>
+    </div>
+    <div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:4px"><span style="color:var(--muted2)">Coverage</span><span style="font-weight:700;color:${color}">${pct}% of ${userLeads.length} assigned</span></div><div style="height:7px;background:var(--border);border-radius:4px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div></div></div>`;
+  } else {
+    const hot=userLeads.filter(l=>l.status==='Hot').length;
+    const closed=userLeads.filter(l=>l.status==='Closed').length;
+    const warm=userLeads.filter(l=>l.status==='Warm').length;
+    statsBlock=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:${color}">${userLeads.length}</div><div style="font-size:.6rem;color:var(--muted2)">Leads</div></div>
+      <div style="background:rgba(255,80,80,.07);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--hot)">${hot}</div><div style="font-size:.6rem;color:var(--muted2)">Hot</div></div>
+      <div style="background:rgba(34,201,138,.07);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--green)">${closed}</div><div style="font-size:.6rem;color:var(--muted2)">Closed</div></div>
+      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${warm}</div><div style="font-size:.6rem;color:var(--muted2)">Warm</div></div>
+    </div>`;
+  }
+
+  // Recent calls
+  const recentCalls=[...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))).slice(0,10);
+  const ocColors={interested:'var(--green)',callback:'var(--gold)',not_interested:'var(--red)',not_picked:'var(--muted2)',switched_off:'var(--muted2)',no_network:'var(--muted2)'};
+  const recentHTML = recentCalls.length===0
+    ? '<div style="text-align:center;color:var(--muted2);padding:16px;font-size:.8rem">No calls logged yet</div>'
+    : recentCalls.map(c=>{
+        const lead=leads.find(l=>l.id===c.leadId);
+        const oc=ocColors[c.outcome]||'var(--muted2)';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:50%;background:${oc};flex-shrink:0"></div><div style="flex:1;min-width:0"><div style="font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lead?lead.name:'Unknown'}</div><div style="font-size:.65rem;color:var(--muted2)">${lead?lead.phone:''} &middot; ${outcomeLabels[c.outcome]||c.outcome}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:.68rem;font-weight:600;color:${oc}">${c.time||''}</div><div style="font-size:.6rem;color:var(--muted2)">${c.date||''}</div></div></div>`;
+      }).join('');
+
+  const html=`<div id="userReportModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:500px;max-height:93vh;overflow-y:auto">
+      <div style="position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--border);padding:16px;z-index:1;display:flex;align-items:center;gap:12px">
+        <div style="width:46px;height:46px;border-radius:50%;background:${bg};color:${color};display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:1.1rem;flex-shrink:0">${name[0].toUpperCase()}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:1rem;font-weight:800;font-family:Syne,sans-serif">${name}</div>
+          <div style="font-size:.68rem;color:var(--muted2)">${isExec?'Sales Executive':'Sales Manager'} &middot; ${userLeads.length} assigned</div>
+        </div>
+        <div style="text-align:right;margin-right:8px">
+          <div style="font-size:1.6rem;font-weight:800;color:${color}">${todayCalls}</div>
+          <div style="font-size:.6rem;color:var(--muted2)">today</div>
+        </div>
+        <button onclick="document.getElementById('userReportModal').remove()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:34px;height:34px;cursor:pointer;color:var(--muted2);font-size:1rem;flex-shrink:0">✕</button>
+      </div>
+      <div style="padding:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+          <div style="background:${bg};border-radius:12px;padding:14px;text-align:center"><div style="font-size:1.8rem;font-weight:800;color:${color}">${totalCalls}</div><div style="font-size:.68rem;color:var(--muted2)">Total Calls Made</div></div>
+          <div style="background:var(--surface);border-radius:12px;padding:14px;text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--gold)">${todayCalls}</div><div style="font-size:.68rem;color:var(--muted2)">Calls Today</div></div>
+        </div>
+        ${statsBlock}
+        <div style="margin-bottom:14px">
+          <div style="font-size:.7rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">&#x1F4CA; Last 14 Days</div>
+          <div style="display:flex;gap:2px;background:var(--surface);border-radius:12px;padding:10px">${barChart}</div>
+        </div>
+        ${totalCalls>0?`<div style="margin-bottom:14px"><div style="font-size:.7rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">&#x1F4DE; Call Outcomes</div><div style="background:var(--surface);border-radius:12px;padding:12px">${outcomeBars}</div></div>`:''}
+        <div><div style="font-size:.7rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">&#x1F550; Recent Calls</div><div style="background:var(--surface);border-radius:12px;padding:12px">${recentHTML}</div></div>
+      </div>
+    </div>
+  </div>`;
+
+  const ex=document.getElementById('userReportModal');
+  if(ex) ex.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 function showPendingModal(){
@@ -2395,7 +2510,7 @@ function adminReportsHTML(){
     const called = myL.filter(l=>l.callCount>0).length;
     const fresh  = myL.filter(l=>!l.callCount||l.callCount===0).length;
     const interested = myL.filter(l=>l.status==='Hot'||l.status==='Warm').length;
-    const todayC = callLogs.filter(c=>c.agent===e.name&&c.date===today).length;
+    const todayC = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(e.name||'').trim().toLowerCase()&&c.date===today).length;
     const pct = myL.length ? Math.round(called/myL.length*100) : 0;
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -2433,7 +2548,7 @@ function adminReportsHTML(){
     const hot    = myL.filter(l=>l.status==='Hot').length;
     const warm   = myL.filter(l=>l.status==='Warm').length;
     const closed = myL.filter(l=>l.status==='Closed').length;
-    const todayC = callLogs.filter(c=>c.agent===m.name&&c.date===today).length;
+    const todayC = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(m.name||'').trim().toLowerCase()&&c.date===today).length;
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif">${m.name}</div>
@@ -2522,7 +2637,7 @@ function exportExecReport(){
     const called = myL.filter(l=>l.callCount>0).length;
     const fresh  = myL.filter(l=>!l.callCount||l.callCount===0).length;
     const interested = myL.filter(l=>l.status==='Hot'||l.status==='Warm').length;
-    const todayC = callLogs.filter(c=>c.agent===e.name&&c.date===today).length;
+    const todayC = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(e.name||'').trim().toLowerCase()&&c.date===today).length;
     const pct = myL.length ? Math.round(called/myL.length*100) : 0;
     return `"${e.name}","${myL.length}","${called}","${fresh}","${todayC}","${interested}","${pct}%"`;
   }).join('\n');
@@ -2731,7 +2846,7 @@ function buildAdminTeamPerfHTML(){
   return '<div style="font-family:Syne,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Team Performance</div>'
     + allU.map(u=>{
       const uLeads  = leads.filter(l=>u.role==='manager'?(l.assignedManager===u.name||l.assigned===u.name):l.generatedBy===u.name).length;
-      const uCalls  = callLogs.filter(c=>c.agent===u.name).length;
+      const uCalls  = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()).length;
       const uClosed = leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length;
       const pct = Math.round((uLeads/maxL)*100);
       return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">'
@@ -2781,7 +2896,7 @@ function adminUsersHTML(){
 
 function userCardHTML(u, role){
   const uLeads=leads.filter(l=>l.assigned===u.name).length;
-  const uCalls=callLogs.filter(c=>c.agent===u.name).length;
+  const uCalls=callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()).length;
   const roleColor=role==='manager'?'var(--blue)':'var(--green)';
   const roleLabel=role==='manager'?'Sales Manager':'Sales Executive';
   return `
@@ -2907,7 +3022,7 @@ function saveEditUser(uid, oldRole){
   // update all leads assigned to old name
   if(newName && newName!==oldName){
     leads.forEach(l=>{if(l.assigned===oldName)l.assigned=newName;if(l.transferredTo===oldName)l.transferredTo=newName;});
-    callLogs.forEach(c=>{if(c.agent===oldName)c.agent=newName;});
+    callLogs.forEach(c=>{if((c.agent||'').trim().toLowerCase()===(oldName||'').trim().toLowerCase())c.agent=newName;});
     save();
   }
   saveUsers();closeModal('plotModal');switchAdminTab('users');
@@ -3476,7 +3591,7 @@ function renderManagerPanel(){
   const hot     = myL.filter(l=>l.status==='Hot').length;
   const closed  = myL.filter(l=>l.status==='Closed').length;
   const pending = myL.filter(l=>l.status==='transferred').length;
-  const todayCalls = callLogs.filter(c=>c.agent===currentUser&&c.date===today).length;
+  const todayCalls = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(currentUser||'').trim().toLowerCase()&&c.date===today).length;
 
   // Pipeline by followup stage
   const stageCards = followupStages.map(s=>{
@@ -3808,7 +3923,7 @@ function saveCall(){
   if(!outcome){ showToast('⚠️ Select a call outcome','error'); return; }
   const now = new Date();
   const log = {
-    id:'C'+Date.now(), leadId:activeLeadId, agent:currentUser,
+    id:'C'+Date.now(), leadId:activeLeadId, agent:(currentUser||'').trim(),
     outcome, statusChanged:null,
     followup:document.getElementById('call-followup').value,
     notes:document.getElementById('call-notes').value.trim(),
@@ -4226,18 +4341,53 @@ async function loadFromFirebase() {
       console.warn('⚠️ No leads returned from cloud — check Supabase RLS policies');
     }
 
-    // Step 4: Load call logs — from app_users (cl_ prefix)
+    // Step 4: Load call logs — from app_users (cl_ prefix, new format)
     const { data: _cld } = await db.from('app_users').select('id,data').like('id','cl_%');
-    if(_cld && _cld.length > 0){
-      const parsedC = _cld.map(r=>{ try{ return typeof r.data==='string'?JSON.parse(r.data):r.data; }catch(e){return null;} }).filter(Boolean);
-      const mergedC = {};
-      parsedC.forEach(c=>{ if(c&&c.id) mergedC[c.id]=c; });
-      callLogs.forEach(c=>{ if(c&&c.id&&!mergedC[c.id]) mergedC[c.id]=c; });
-      callLogs = Object.values(mergedC).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-      localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
-      // Push any local-only calls to cloud
-      const localOnly = callLogs.filter(c => !parsedC.find(p=>p&&p.id===c.id));
-      if(localOnly.length > 0) localOnly.forEach(c => saveCallLog(c));
+    const parsedNew = (_cld||[]).map(r=>{ try{ return typeof r.data==='string'?JSON.parse(r.data):r.data; }catch(e){return null;} }).filter(Boolean);
+
+    // Step 5: MIGRATION — also read old call_logs table (columns format) so no calls lost
+    let parsedOld = [];
+    try {
+      const { data: _oldCld } = await db.from('call_logs').select('*');
+      if(_oldCld && _oldCld.length > 0){
+        parsedOld = _oldCld.map(r=>{
+          // Old format had columns: id, lead_id, agent, outcome, date, time, notes, followup
+          // New format stores full JSON in data column
+          if(r.data){ try{ return typeof r.data==='string'?JSON.parse(r.data):r.data; }catch(e){} }
+          if(r.agent) return { id:r.id, leadId:r.lead_id||r.leadId, agent:r.agent,
+            outcome:r.outcome, date:r.date, time:r.time, notes:r.notes||'', followup:r.followup||'' };
+          return null;
+        }).filter(Boolean);
+        console.log('📦 Migrated', parsedOld.length, 'calls from old call_logs table');
+      }
+    } catch(e){ console.warn('Old call_logs migration skipped:', e.message); }
+
+    // Merge: new cl_ rows + old call_logs rows + local
+    const mergedC = {};
+    parsedOld.forEach(c=>{ if(c&&c.id) mergedC[c.id]=c; });
+    parsedNew.forEach(c=>{ if(c&&c.id) mergedC[c.id]=c; }); // new wins over old
+    callLogs.forEach(c=>{ if(c&&c.id&&!mergedC[c.id]) mergedC[c.id]=c; }); // local fills gaps
+
+    // Normalize all agent names against known USERS (fix case/space mismatches like NEHA vs Neha)
+    const allKnownUsers = [...(USERS.executive||[]), ...(USERS.manager||[]), ...(USERS.admin||[])];
+    Object.values(mergedC).forEach(c=>{
+      if(!c.agent) return;
+      const agentLower = c.agent.trim().toLowerCase();
+      const matched = allKnownUsers.find(u => (u.name||'').trim().toLowerCase() === agentLower);
+      if(matched && matched.name !== c.agent) {
+        console.log(`🔧 Normalizing agent: "${c.agent}" → "${matched.name}"`);
+        c.agent = matched.name; // normalize to canonical name from USERS
+      }
+    });
+
+    callLogs = Object.values(mergedC).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    localStorage.setItem('ycrm_calls', JSON.stringify(callLogs));
+
+    // Re-save normalized calls to cloud (cl_ format) so they're correct next time
+    const needsResave = callLogs.filter(c => !parsedNew.find(p=>p&&p.id===c.id));
+    if(needsResave.length > 0){
+      console.log('⬆️ Pushing', needsResave.length, 'calls to cloud (new format)');
+      needsResave.forEach(c => saveCallLog(c));
     }
 
   } catch(e) {
@@ -4718,7 +4868,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if(userObj){
           currentRole = s.role;
-          currentUser = userObj.name;
+          currentUser = (userObj.name||'').trim();
           document.getElementById('loginScreen').style.display='none';
           document.getElementById('appShell').style.display='block';
           document.getElementById('topName').textContent = userObj.name.split(' ')[0];
