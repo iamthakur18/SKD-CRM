@@ -1615,6 +1615,66 @@ function adminLiveSection(){
       :intRows+(interested.length>15?'<div style="text-align:center;font-size:.72rem;color:var(--muted2);padding:6px">...and '+(interested.length-15)+' more</div>':''));
 }
 
+// ══════════════════════════════════════════
+//  USER REPORT HELPERS (global scope)
+// ══════════════════════════════════════════
+function miniLeadList(items, emptyMsg){
+  if(!items.length) return `<div style="text-align:center;color:var(--muted2);padding:12px;font-size:.78rem">${emptyMsg}</div>`;
+  return items.slice(0,30).map(l=>`
+    <div onclick="document.getElementById('userReportModal').remove();openLead('${l.id}')"
+      style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--surface);color:var(--text);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;flex-shrink:0">${(l.name||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.name||'Unknown'}</div>
+        <div style="font-size:.63rem;color:var(--muted2)">📞 ${l.phone||'—'}${l.interest&&l.interest!=='Not decided'?' · '+l.interest:''}</div>
+      </div>
+      <span style="font-size:.6rem;color:var(--blue)">open →</span>
+    </div>`).join('')
+  + (items.length>30?`<div style="text-align:center;font-size:.7rem;color:var(--muted2);padding:6px">+${items.length-30} more</div>`:'');
+}
+
+function miniCallList(items, emptyMsg){
+  if(!items.length) return `<div style="text-align:center;color:var(--muted2);padding:12px;font-size:.78rem">${emptyMsg}</div>`;
+  const oclabels={not_picked:'Not Picked',switched_off:'Switched Off',no_network:'No Network',callback:'Call Back',not_interested:'Not Interested',interested:'Interested'};
+  const ocCol={interested:'var(--green)',callback:'var(--gold)',not_interested:'var(--red)',not_picked:'var(--muted2)',switched_off:'var(--muted2)',no_network:'var(--muted2)'};
+  return items.slice(0,30).map(c=>{
+    const lid=c.leadId||c.lead_id;
+    const lead=leads.find(l=>l.id===lid);
+    const oc=ocCol[c.outcome]||'var(--muted2)';
+    return `<div onclick="${lead?`document.getElementById('userReportModal').remove();openLead('${lid}')`:''}"
+      style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);${lead?'cursor:pointer;':''}border-radius:6px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${oc};flex-shrink:0;margin:0 4px"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lead?lead.name:'Unknown'}</div>
+        <div style="font-size:.63rem;color:var(--muted2)">📞 ${lead?lead.phone:''} · <span style="color:${oc}">${oclabels[c.outcome]||c.outcome}</span></div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:.68rem;color:var(--text)">${c.time||''}</div>
+        <div style="font-size:.58rem;color:var(--muted2)">${c.date||''}</div>
+      </div>
+    </div>`;
+  }).join('')
+  + (items.length>30?`<div style="text-align:center;font-size:.7rem;color:var(--muted2);padding:6px">+${items.length-30} more</div>`:'');
+}
+
+function statCardClick(panelId, title, htmlContent){
+  const existing = document.getElementById(panelId);
+  if(existing){ existing.remove(); return; }
+  document.querySelectorAll('.ur-sub-panel').forEach(p=>p.remove());
+  const panel = document.createElement('div');
+  panel.id = panelId;
+  panel.className = 'ur-sub-panel';
+  panel.style.cssText = 'background:var(--card);border:1.5px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden';
+  panel.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
+    <div style="font-size:.78rem;font-weight:700">${title}</div>
+    <button onclick="document.getElementById('${panelId}').remove()" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:1rem;padding:0 4px">✕</button>
+  </div>
+  <div style="max-height:280px;overflow-y:auto;padding:4px 8px">${htmlContent}</div>`;
+  const statsDiv = document.querySelector('[id^="ur-stats-"]');
+  if(statsDiv) statsDiv.after(panel);
+  else document.getElementById('userReportModal').querySelector('[style*="padding:16px"]').prepend(panel);
+}
+
 function showUserReport(name, role){
   const isExec = role === 'executive';
   const color  = isExec ? 'var(--green)' : 'var(--blue)';
@@ -1655,37 +1715,82 @@ function showUserReport(name, role){
   // Role-specific stats block
   let statsBlock = '';
   if(isExec){
-    const pending=userLeads.filter(l=>!l.callCount||l.callCount===0).length;
-    const called=userLeads.filter(l=>l.callCount>0).length;
-    const generated=leads.filter(l=>l.generatedBy===name).length;
-    const pct=userLeads.length?Math.round(called/userLeads.length*100):0;
-    statsBlock=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-      <div style="background:rgba(240,92,92,.07);border:1px solid rgba(240,92,92,.2);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--red)">${pending}</div><div style="font-size:.6rem;color:var(--red)">Pending</div></div>
-      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--green)">${called}</div><div style="font-size:.6rem;color:var(--muted2)">Called</div></div>
-      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${generated}</div><div style="font-size:.6rem;color:var(--muted2)">Generated</div></div>
+    const pending=userLeads.filter(l=>!l.callCount||l.callCount===0);
+    const called=userLeads.filter(l=>l.callCount>0);
+    const generated=leads.filter(l=>l.generatedBy===name&&l.assignedRole==='manager');
+    const todayCallList=[...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+    const pct=userLeads.length?Math.round(called.length/userLeads.length*100):0;
+    const uid=name.replace(/\s+/g,'_');
+    statsBlock=`<div id="ur-stats-${uid}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      <div onclick="statCardClick('urp_pending_${uid}','⏳ Pending (${pending.length})',miniLeadList(${JSON.stringify(pending.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No pending calls'))"
+        style="background:rgba(240,92,92,.07);border:1px solid rgba(240,92,92,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--red)">${pending.length}</div><div style="font-size:.6rem;color:var(--red)">Pending</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_called_${uid}','✅ Called (${called.length})',miniLeadList(${JSON.stringify(called.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'None called yet'))"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--green)">${called.length}</div><div style="font-size:.6rem;color:var(--muted2)">Called</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_generated_${uid}','🔥 Generated (${generated.length})',miniLeadList(${JSON.stringify(generated.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'None generated yet'))"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${generated.length}</div><div style="font-size:.6rem;color:var(--muted2)">Generated</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_today_${uid}','📞 Today\'s Calls (${todayCallList.length})',miniCallList(${JSON.stringify(todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})))}, 'No calls today'))"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--blue)">${todayCallList.length}</div><div style="font-size:.6rem;color:var(--muted2)">Today</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
     </div>
     <div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:4px"><span style="color:var(--muted2)">Coverage</span><span style="font-weight:700;color:${color}">${pct}% of ${userLeads.length} assigned</span></div><div style="height:7px;background:var(--border);border-radius:4px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div></div></div>`;
   } else {
-    const hot=userLeads.filter(l=>l.status==='Hot').length;
-    const closed=userLeads.filter(l=>l.status==='Closed').length;
-    const warm=userLeads.filter(l=>l.status==='Warm').length;
-    statsBlock=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:${color}">${userLeads.length}</div><div style="font-size:.6rem;color:var(--muted2)">Leads</div></div>
-      <div style="background:rgba(255,80,80,.07);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--hot)">${hot}</div><div style="font-size:.6rem;color:var(--muted2)">Hot</div></div>
-      <div style="background:rgba(34,201,138,.07);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--green)">${closed}</div><div style="font-size:.6rem;color:var(--muted2)">Closed</div></div>
-      <div style="background:var(--surface);border-radius:10px;padding:10px;text-align:center"><div style="font-size:1.3rem;font-weight:800;color:var(--gold)">${warm}</div><div style="font-size:.6rem;color:var(--muted2)">Warm</div></div>
+    const hot=userLeads.filter(l=>l.status==='Hot');
+    const closed=userLeads.filter(l=>l.status==='Closed');
+    const warm=userLeads.filter(l=>l.status==='Warm');
+    const todayCallList=[...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+    const uid=name.replace(/\s+/g,'_');
+    statsBlock=`<div id="ur-stats-${uid}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      <div onclick="statCardClick('urp_all_${uid}','📋 All Leads (${userLeads.length})',miniLeadList(${JSON.stringify(userLeads.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No leads'))"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:${color}">${userLeads.length}</div><div style="font-size:.6rem;color:var(--muted2)">Leads</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_hot_${uid}','🔥 Hot Leads (${hot.length})',miniLeadList(${JSON.stringify(hot.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No hot leads'))"
+        style="background:rgba(255,80,80,.07);border:1px solid rgba(255,80,80,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--hot)">${hot.length}</div><div style="font-size:.6rem;color:var(--muted2)">Hot</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_closed_${uid}','✅ Closed (${closed.length})',miniLeadList(${JSON.stringify(closed.map(l=>({id:l.id,name:l.name,phone:l.phone,interest:l.interest})))}, 'No closed deals'))"
+        style="background:rgba(34,201,138,.07);border:1px solid rgba(34,201,138,.2);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--green)">${closed.length}</div><div style="font-size:.6rem;color:var(--muted2)">Closed</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
+      <div onclick="statCardClick('urp_today_${uid}','📞 Today\'s Calls (${todayCallList.length})',miniCallList(${JSON.stringify(todayCallList.map(c=>({id:c.id,leadId:c.leadId||c.lead_id,outcome:c.outcome,date:c.date,time:c.time})))}, 'No calls today'))"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer">
+        <div style="font-size:1.3rem;font-weight:800;color:var(--blue)">${todayCallList.length}</div><div style="font-size:.6rem;color:var(--muted2)">Today</div><div style="font-size:.55rem;color:var(--muted2)">tap to view</div></div>
     </div>`;
   }
 
   // Recent calls
-  const recentCalls=[...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))).slice(0,10);
+  const recentCalls=[...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))).slice(0,20);
   const ocColors={interested:'var(--green)',callback:'var(--gold)',not_interested:'var(--red)',not_picked:'var(--muted2)',switched_off:'var(--muted2)',no_network:'var(--muted2)'};
   const recentHTML = recentCalls.length===0
     ? '<div style="text-align:center;color:var(--muted2);padding:16px;font-size:.8rem">No calls logged yet</div>'
     : recentCalls.map(c=>{
-        const lead=leads.find(l=>l.id===c.leadId);
-        const oc=ocColors[c.outcome]||'var(--muted2)';
-        return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:50%;background:${oc};flex-shrink:0"></div><div style="flex:1;min-width:0"><div style="font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lead?lead.name:'Unknown'}</div><div style="font-size:.65rem;color:var(--muted2)">${lead?lead.phone:''} &middot; ${outcomeLabels[c.outcome]||c.outcome}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:.68rem;font-weight:600;color:${oc}">${c.time||''}</div><div style="font-size:.6rem;color:var(--muted2)">${c.date||''}</div></div></div>`;
+        // Support both leadId (new) and lead_id (old format from call_logs table)
+        const lid = c.leadId || c.lead_id;
+        const lead = leads.find(l=>l.id===lid);
+        const oc = ocColors[c.outcome]||'var(--muted2)';
+        const customerName = lead ? lead.name : (lid ? '📞 '+lid : 'Unknown');
+        const phone = lead ? lead.phone : '';
+        const canOpen = !!lead;
+        return `<div onclick="${canOpen ? `document.getElementById('userReportModal').remove();openLead('${lid}')` : ''}"
+          style="display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--border);border-radius:8px;${canOpen?'cursor:pointer;':''}${canOpen?'margin-bottom:2px;':''}">
+          <div style="width:34px;height:34px;border-radius:50%;background:${ocColors[c.outcome]||'var(--surface)'};opacity:.15;flex-shrink:0;position:relative">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:6.67">
+              <div style="width:8px;height:8px;border-radius:50%;background:${oc}"></div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${customerName}</div>
+            <div style="font-size:.65rem;color:var(--muted2);display:flex;align-items:center;gap:4px">
+              ${phone?`<span>📞 ${phone}</span><span>&middot;</span>`:''}
+              <span style="color:${oc};font-weight:600">${outcomeLabels[c.outcome]||c.outcome}</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:.7rem;font-weight:700;color:var(--text)">${c.time||''}</div>
+            <div style="font-size:.6rem;color:var(--muted2)">${c.date||''}</div>
+            ${canOpen?'<div style="font-size:.55rem;color:var(--blue)">tap to open →</div>':''}
+          </div>
+        </div>`;
       }).join('');
 
   const html=`<div id="userReportModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target===this)this.remove()">
@@ -1704,8 +1809,18 @@ function showUserReport(name, role){
       </div>
       <div style="padding:16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-          <div style="background:${bg};border-radius:12px;padding:14px;text-align:center"><div style="font-size:1.8rem;font-weight:800;color:${color}">${totalCalls}</div><div style="font-size:.68rem;color:var(--muted2)">Total Calls Made</div></div>
-          <div style="background:var(--surface);border-radius:12px;padding:14px;text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--gold)">${todayCalls}</div><div style="font-size:.68rem;color:var(--muted2)">Calls Today</div></div>
+          <div onclick="statCardClick('urp_allcalls_'+name.replace(/\s+/g,'_'),'📞 All Calls ('+totalCalls+')',miniCallList([...userCalls].sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||''))),'No calls yet'))"
+            style="background:${bg};border-radius:12px;padding:14px;text-align:center;cursor:pointer">
+            <div style="font-size:1.8rem;font-weight:800;color:${color}">${totalCalls}</div>
+            <div style="font-size:.68rem;color:var(--muted2)">Total Calls Made</div>
+            <div style="font-size:.58rem;color:${color}">tap to view</div>
+          </div>
+          <div onclick="statCardClick('urp_todaycalls_'+name.replace(/\s+/g,'_'),'📞 Today\'s Calls ('+todayCalls+')',miniCallList([...userCalls].filter(c=>c.date===today).sort((a,b)=>(b.time||'').localeCompare(a.time||'')),'No calls today'))"
+            style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;cursor:pointer">
+            <div style="font-size:1.8rem;font-weight:800;color:var(--gold)">${todayCalls}</div>
+            <div style="font-size:.68rem;color:var(--muted2)">Calls Today</div>
+            <div style="font-size:.58rem;color:var(--gold)">tap to view</div>
+          </div>
         </div>
         ${statsBlock}
         <div style="margin-bottom:14px">
@@ -4368,15 +4483,18 @@ async function loadFromFirebase() {
     parsedNew.forEach(c=>{ if(c&&c.id) mergedC[c.id]=c; }); // new wins over old
     callLogs.forEach(c=>{ if(c&&c.id&&!mergedC[c.id]) mergedC[c.id]=c; }); // local fills gaps
 
-    // Normalize all agent names against known USERS (fix case/space mismatches like NEHA vs Neha)
+    // Normalize all agent names + fix leadId field
     const allKnownUsers = [...(USERS.executive||[]), ...(USERS.manager||[]), ...(USERS.admin||[])];
     Object.values(mergedC).forEach(c=>{
+      // Fix leadId from old lead_id column format
+      if(!c.leadId && c.lead_id) c.leadId = c.lead_id;
+      // Normalize agent name (fix NEHA vs Neha etc.)
       if(!c.agent) return;
       const agentLower = c.agent.trim().toLowerCase();
       const matched = allKnownUsers.find(u => (u.name||'').trim().toLowerCase() === agentLower);
       if(matched && matched.name !== c.agent) {
-        console.log(`🔧 Normalizing agent: "${c.agent}" → "${matched.name}"`);
-        c.agent = matched.name; // normalize to canonical name from USERS
+        console.log(`Normalizing agent: "${c.agent}" → "${matched.name}"`);
+        c.agent = matched.name;
       }
     });
 
