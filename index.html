@@ -410,6 +410,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
       <input type="hidden" id="call-outcome" value="">
     </div>
 
+    <div id="callModalStageSection" class="form-group" style="display:none">
+      <label class="form-label">Customer Follow-up Stage</label>
+      <div id="callModalStageChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      <input type="hidden" id="call-stage" value="">
+    </div>
     <div class="form-group">
       <label class="form-label">Follow-up Date</label>
       <input class="form-input" id="call-followup" type="date">
@@ -658,6 +663,7 @@ async function syncFromCloud(){
 
     // ── Refresh all active panels ──
     renderDashboard();
+    rebuildCallCounts();
     if(document.getElementById('leads-list')) renderLeadsList();
     if(currentRole==='admin' && document.getElementById('admin-tab-content')) renderAdminPanel();
     if(currentRole==='manager'){ renderManagerPanel && renderManagerPanel(); }
@@ -780,6 +786,15 @@ function startRealtimeSync(){
 }
 
 // Sync only plots from cloud and re-render if on plots page
+async function rebuildCallCounts(){
+  leads.forEach(l=>{
+    const actual = callLogs.filter(c=>c.leadId===l.id).length;
+    if(actual !== (l.callCount||0)) l.callCount = actual;
+    const myLogs = callLogs.filter(c=>c.leadId===l.id).sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')));
+    if(myLogs.length>0 && !l.lastOutcome) l.lastOutcome = myLogs[0].outcome;
+  });
+}
+
 async function syncPlotsFromCloud(){
   try {
     const res = await fetch(SUPA_URL + '/rest/v1/plots?select=*', {
@@ -1257,7 +1272,10 @@ async function doLogin(){
   startLocationTracking();
   if(currentRole==='admin') loadTeamLocations();
   // Init cloud sync after login
-  syncFromCloud().then(()=>{ startRealtimeSync(); });
+  syncFromCloud().then(()=>{
+    startRealtimeSync();
+    setTimeout(()=>{ checkFollowupReminders(); }, 1500);
+  });
 }
 
 function logout(){
@@ -1352,6 +1370,7 @@ function myLeads(){
 }
 
 function renderDashboard(){
+  if(currentRole==='executive'||currentRole==='manager') checkFollowupReminders();
   const ml = myLeads();
   const hot = ml.filter(l=>l.status==='Hot').length;
   const closed = ml.filter(l=>l.status==='Closed').length;
@@ -1380,7 +1399,7 @@ function renderDashboard(){
   let teamSection = '';
   if(currentRole==='admin'){
     const buildExecCard = (u) => {
-      const coldData    = leads.filter(l=>l.assigned===u.name&&l.assignedRole==='executive');
+      const coldData    = leads.filter(l=>l.assigned===u.name); // ALL assigned including converted
       const uPending    = coldData.filter(l=>!l.callCount||l.callCount===0).length;
       const uCalled     = coldData.filter(l=>l.callCount>0).length;
       const uGenerated  = leads.filter(l=>l.generatedBy===u.name&&l.assignedRole==='manager').length;
@@ -1501,7 +1520,7 @@ function renderDashboard(){
   // Executive: cold data summary card on dashboard
   let execColdBanner = '';
   if(currentRole==='executive'){
-    const coldData  = leads.filter(l=>l.assigned===currentUser&&l.assignedRole==='executive');
+    const coldData  = leads.filter(l=>l.assigned===currentUser); // ALL assigned including converted
     const called    = coldData.filter(l=>l.callCount>0).length;
     const uncalled  = coldData.length - called;
     const generated = leads.filter(l=>l.generatedBy===currentUser&&l.assignedRole==='manager').length;
@@ -1689,7 +1708,7 @@ function showUserReport(name, role){
 
   const userCalls = callLogs.filter(c => (c.agent||'').trim().toLowerCase()===(name||'').trim().toLowerCase());
   const userLeads = isExec
-    ? leads.filter(l => l.assigned === name && l.assignedRole === 'executive')
+    ? leads.filter(l => l.assigned === name) // ALL assigned including converted
     : leads.filter(l => (l.assignedManager === name || l.assigned === name) && l.assignedRole === 'manager');
 
   const _dn=new Date();
@@ -1947,7 +1966,7 @@ function renderLeads(){
 
   // Executive call list progress header
   const execHeader = currentRole==='executive' ? (()=>{
-    const myL = leads.filter(l=>l.assigned===currentUser&&l.assignedRole==='executive'); // cold data only
+    const myL = leads.filter(l=>l.assigned===currentUser); // ALL leads ever assigned including converted
     const called = myL.filter(l=>l.callCount>0).length;
     const pct = myL.length ? Math.round(called/myL.length*100) : 0;
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
@@ -2639,7 +2658,7 @@ function adminReportsHTML(){
 
   // ── Per-executive stats ──
   const execRows = execs.map(e=>{
-    const myL   = leads.filter(l=>l.assigned===e.name && l.assignedRole==='executive');
+    const myL   = leads.filter(l=>l.assigned===e.name); // ALL assigned including converted
     const called = myL.filter(l=>l.callCount>0).length;
     const fresh  = myL.filter(l=>!l.callCount||l.callCount===0).length;
     const interested = myL.filter(l=>l.status==='Hot'||l.status==='Warm').length;
@@ -4026,6 +4045,28 @@ function selectOutcome(el){
     const d=new Date(); d.setDate(d.getDate()+1);
     document.getElementById('call-followup').value=d.toISOString().slice(0,10);
   }
+  const stageSection = document.getElementById('callModalStageSection');
+  if(stageSection){
+    const showStage = (val==='callback'||val==='interested');
+    stageSection.style.display = showStage ? '' : 'none';
+    if(showStage){
+      const lead = leads.find(l=>l.id===activeLeadId);
+      const currentStage = lead ? (lead.followupStage||'') : '';
+      document.getElementById('callModalStageChips').innerHTML = followupStages.map(s=>{
+        const active = currentStage===s.id;
+        return '<div data-stid="'+s.id+'" onclick="selectCallStage(this)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:20px;font-size:.72rem;font-weight:600;cursor:pointer;border:1px solid '+(active?'var(--gold)':'var(--border)')+';background:'+(active?'rgba(232,160,32,.15)':'var(--card)')+';color:'+(active?'var(--gold)':'var(--muted2)')+'">'+s.icon+' '+s.label+'</div>';
+      }).join('');
+      document.getElementById('call-stage').value = currentStage;
+    }
+  }
+}
+
+function selectCallStage(el){
+  document.querySelectorAll('#callModalStageChips div').forEach(d=>{
+    d.style.border='1px solid var(--border)';d.style.background='var(--card)';d.style.color='var(--muted2)';
+  });
+  el.style.border='1px solid var(--gold)';el.style.background='rgba(232,160,32,.15)';el.style.color='var(--gold)';
+  document.getElementById('call-stage').value = el.dataset.stid;
 }
 
 function openCallModal(id){
@@ -4117,6 +4158,7 @@ function saveCall(){
     }
   }
   callLogs.push(log);
+  rebuildCallCounts();
   save(activeLeadId);
   saveCallToCloud(log);
   closeModal('callModal');
