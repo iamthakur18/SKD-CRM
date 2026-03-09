@@ -527,26 +527,22 @@ function initSupabase(){
   }
 }
 
-// ── Plain fetch wrappers (no Supabase JS client DataCloneError) ──
+// ── Supabase JS client wrappers ──
 async function dbGet(table){
+  if(!supabaseReady) return null;
   try{
-    const res = await fetch(SUPA_URL+'/rest/v1/'+table+'?select=*',{
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
-    });
-    if(!res.ok){ console.warn('dbGet error:',table,res.status); return null; }
-    return await res.json();
+    const { data, error } = await db.from(table).select('*');
+    if(error){ console.warn('dbGet error:',table,error.message); return null; }
+    return data;
   }catch(e){ console.warn('dbGet failed:',table,e.message); return null; }
 }
 
 async function dbUpsert(table, row){
+  if(!supabaseReady) return;
   try{
-    const res = await fetch(SUPA_URL+'/rest/v1/'+table,{
-      method:'POST',
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
-               'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
-      body:JSON.stringify(Array.isArray(row)?row:[row])
-    });
-    if(!res.ok) console.warn('dbUpsert error:',table,res.status);
+    const rows = Array.isArray(row) ? row : [row];
+    const { error } = await db.from(table).upsert(rows, {onConflict:'id'});
+    if(error) console.warn('dbUpsert error:',table,error.message);
   }catch(e){ console.warn('dbUpsert failed:',table,e.message); }
 }
 async function loadUsersFromCloud(){
@@ -566,21 +562,14 @@ async function loadUsersFromCloud(){
 }
 async function dbDelete(table, id){
   try{
-    await fetch(SUPA_URL+'/rest/v1/'+table+'?id=eq.'+encodeURIComponent(id),{
-      method:'DELETE',
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
-    });
+    await db.from(table).delete().eq('id', id);
   }catch(e){ console.warn('dbDelete failed:',table,e.message); }
 }
 
 async function dbSet(table, key, value){
+  if(!supabaseReady) return;
   try{
-    await fetch(SUPA_URL+'/rest/v1/'+table,{
-      method:'POST',
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
-               'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
-      body:JSON.stringify([{id:key, data:JSON.stringify(value)}])
-    });
+    await db.from(table).upsert([{id:key, data:JSON.stringify(value)}],{onConflict:'id'});
   }catch(e){ console.warn('dbSet failed:',table,e.message); }
 }
 
@@ -624,15 +613,10 @@ async function syncFromCloud(){
       }
     }
     // ── USERS ──
-    const usersRes = await fetch(SUPA_URL + '/rest/v1/app_users?id=eq.users&select=data', {
-      headers: {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY}
-    });
-    if(usersRes.ok){
-      const syncUsersRows = await usersRes.json();
-      if(syncUsersRows && syncUsersRows[0] && syncUsersRows[0].data){
-        const parsed = typeof syncUsersRows[0].data==='string' ? JSON.parse(syncUsersRows[0].data) : syncUsersRows[0].data;
-        if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
-      }
+    const { data: _scU } = await db.from('app_users').select('data').eq('id','users');
+    if(_scU && _scU[0] && _scU[0].data){
+      const parsed = typeof _scU[0].data==='string' ? JSON.parse(_scU[0].data) : _scU[0].data;
+      if(parsed && parsed.admin){ USERS = parsed; localStorage.setItem('ycrm_users', JSON.stringify(USERS)); }
     }
     // ── PLOTS (load BEFORE rendering) ──
     await syncPlotsFromCloud();
@@ -671,13 +655,12 @@ function showSyncBanner(msg, fadeOut=false){
 
 // Push a single lead to cloud
 async function pushLead(lead){
+  if(!supabaseReady) return;
   lead.updatedAt = new Date().toISOString();
-  await fetch(SUPA_URL+'/rest/v1/leads',{
-    method:'POST',
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
-             'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
-    body:JSON.stringify([{id:lead.id, data:JSON.stringify(lead)}])
-  });
+  try {
+    const { error } = await db.from('leads').upsert({id:lead.id, data:JSON.stringify(lead)}, {onConflict:'id'});
+    if(error) console.warn('pushLead error:', error.message);
+  } catch(e){ console.warn('pushLead exception:', e.message); }
 }
 
 // ── Push ALL leads to Supabase in one batch ──
@@ -694,16 +677,10 @@ async function saveAllLeadsToCloud(){
         l.updatedAt = new Date().toISOString();
         return {id: l.id, data: JSON.stringify(l)};
       });
-      const res = await fetch(SUPA_URL+'/rest/v1/leads',{
-        method:'POST',
-        headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,
-                 'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
-        body:JSON.stringify(rows)
-      });
-      if(!res.ok){
-        const err = await res.text();
-        console.warn('Batch upsert error:', res.status, err);
-        showToast('❌ Push failed: ' + res.status, 'error');
+      const { error: batchErr } = await db.from('leads').upsert(rows,{onConflict:'id'});
+      if(batchErr){
+        console.warn('Batch upsert error:', batchErr.message);
+        showToast('❌ Push failed: ' + batchErr.message, 'error');
         return;
       }
       pushed += chunk.length;
@@ -720,11 +697,8 @@ async function saveAllLeadsToCloud(){
 async function loadAllLeadsFromCloud(){
   if(!supabaseReady) return [];
   try {
-    const res = await fetch(SUPA_URL+'/rest/v1/leads?select=*',{
-      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
-    });
-    if(!res.ok){ console.warn('loadAllLeadsFromCloud error:',res.status); return []; }
-    const data = await res.json();
+    const { data, error } = await db.from('leads').select('*');
+    if(error){ console.warn('loadAllLeadsFromCloud error:',error.message); return []; }
     if(Array.isArray(data) && data.length > 0){
       const parsed = data.map(row => {
         try { return typeof row.data === 'string' ? JSON.parse(row.data) : row.data; }
@@ -1285,39 +1259,67 @@ function renderDashboard(){
   // ── Team performance for admin ──
   let teamSection = '';
   if(currentRole==='admin'){
-    const buildMemberCard = (u, color, bgColor) => {
-      const uLeads      = leads.filter(l=>l.assigned===u.name).length;
-      const uHot        = leads.filter(l=>l.assigned===u.name&&l.status==='Hot').length;
-      const uCalls      = callLogs.filter(c=>c.agent===u.name).length;
+    const buildExecCard = (u) => {
+      const coldData    = leads.filter(l=>l.assigned===u.name&&l.assignedRole==='executive');
+      const uPending    = coldData.filter(l=>!l.callCount||l.callCount===0).length;
+      const uCalled     = coldData.filter(l=>l.callCount>0).length;
+      const uGenerated  = leads.filter(l=>l.generatedBy===u.name&&l.assignedRole==='manager').length;
       const uCallsToday = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
-      const uClosed     = leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length;
-      const uTransf     = leads.filter(l=>l.assigned===u.name&&l.status==='transferred').length;
-      const maxLeads    = Math.max(...[...USERS.manager,...USERS.executive].map(x=>leads.filter(l=>l.assigned===x.name).length),1);
-      const pct         = Math.round((uLeads/maxLeads)*100);
+      const pct         = coldData.length ? Math.round(uCalled/coldData.length*100) : 0;
       const activePill  = u.active
         ? 'background:rgba(34,201,138,.1);color:var(--green);border:1px solid rgba(34,201,138,.2)'
         : 'background:rgba(240,92,92,.1);color:var(--red);border:1px solid rgba(240,92,92,.2)';
       return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px">'
         + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
-        +   '<div style="width:38px;height:38px;border-radius:50%;background:'+bgColor+';color:'+color+';display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
+        +   '<div style="width:38px;height:38px;border-radius:50%;background:rgba(34,201,138,.18);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
         +   '<div style="flex:1;min-width:0">'
         +     '<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
-        +     '<div style="font-size:.65rem;color:var(--muted2)">Today: '+uCallsToday+' calls &nbsp;&middot;&nbsp; Total: '+uCalls+' calls</div>'
+        +     '<div style="font-size:.65rem;color:var(--muted2)">Today: '+uCallsToday+' calls · Total assigned: '+coldData.length+'</div>'
         +   '</div>'
         +   '<span style="font-size:.58rem;font-weight:700;padding:2px 7px;border-radius:8px;'+activePill+'">'+(u.active?'Active':'Off')+'</span>'
         + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:8px">'
-        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:'+color+'">'+uLeads+'</div><div style="font-size:.58rem;color:var(--muted)">Leads</div></div>'
+        +   '<div style="text-align:center;background:rgba(240,92,92,.07);border:1px solid rgba(240,92,92,.2);border-radius:8px;padding:6px 2px"><div style="font-size:1rem;font-weight:800;color:var(--red)">'+uPending+'</div><div style="font-size:.58rem;color:var(--red);font-weight:600">Pending</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--green)">'+uCalled+'</div><div style="font-size:.58rem;color:var(--muted)">Called</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--gold)">'+uGenerated+'</div><div style="font-size:.58rem;color:var(--muted)">Generated</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--blue)">'+uCallsToday+'</div><div style="font-size:.58rem;color:var(--muted)">Today</div></div>'
+        + '</div>'
+        + (coldData.length>0 ? '<div style="width:100%;height:5px;background:var(--border);border-radius:2px;margin-bottom:3px">'
+        +   '<div style="width:'+pct+'%;height:100%;border-radius:2px;background:var(--green)"></div>'
+        + '</div>'
+        + '<div style="font-size:.6rem;color:var(--muted2)">'+pct+'% coverage · '+uPending+' still pending</div>' : '')
+        + '</div>';
+    };
+    const buildMgrCard = (u) => {
+      const uLeads      = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.assignedRole==='manager').length;
+      const uHot        = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.status==='Hot').length;
+      const uCalls      = callLogs.filter(c=>c.agent===u.name).length;
+      const uCallsToday = callLogs.filter(c=>c.agent===u.name&&c.date===today).length;
+      const uClosed     = leads.filter(l=>(l.assignedManager===u.name||l.assigned===u.name)&&l.status==='Closed').length;
+      const activePill  = u.active
+        ? 'background:rgba(34,201,138,.1);color:var(--green);border:1px solid rgba(34,201,138,.2)'
+        : 'background:rgba(240,92,92,.1);color:var(--red);border:1px solid rgba(240,92,92,.2)';
+      return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:8px">'
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        +   '<div style="width:38px;height:38px;border-radius:50%;background:rgba(77,142,240,.18);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;flex-shrink:0">'+u.name[0]+'</div>'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+u.name+'</div>'
+        +     '<div style="font-size:.65rem;color:var(--muted2)">Today: '+uCallsToday+' calls · Total: '+uCalls+' calls</div>'
+        +   '</div>'
+        +   '<span style="font-size:.58rem;font-weight:700;padding:2px 7px;border-radius:8px;'+activePill+'">'+(u.active?'Active':'Off')+'</span>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:8px">'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--blue)">'+uLeads+'</div><div style="font-size:.58rem;color:var(--muted)">Leads</div></div>'
         +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--hot)">'+uHot+'</div><div style="font-size:.58rem;color:var(--muted)">Hot</div></div>'
         +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--green)">'+uClosed+'</div><div style="font-size:.58rem;color:var(--muted)">Closed</div></div>'
-        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--purple)">'+uTransf+'</div><div style="font-size:.58rem;color:var(--muted)">Transf.</div></div>'
+        +   '<div style="text-align:center;background:var(--surface);border-radius:8px;padding:6px 2px"><div style="font-size:.95rem;font-weight:700;color:var(--blue)">'+uCallsToday+'</div><div style="font-size:.58rem;color:var(--muted)">Today</div></div>'
         + '</div>'
-        + '<div style="width:100%;height:4px;background:var(--border);border-radius:2px">'
-        +   '<div style="width:'+pct+'%;height:100%;border-radius:2px;background:'+color+'"></div>'
-        + '</div></div>';
+        + '</div>';
     };
-    const mgrCards = USERS.manager.map(u=>buildMemberCard(u,'var(--blue)','rgba(77,142,240,.18)')).join('');
-    const excCards = USERS.executive.map(u=>buildMemberCard(u,'var(--green)','rgba(34,201,138,.18)')).join('');
+    const mgrCards = USERS.manager.map(u=>buildMgrCard(u)).join('');
+    const excCards = USERS.executive.map(u=>buildExecCard(u)).join('');
+    // Total pending summary pill
+    const totalPending = leads.filter(l=>l.assignedRole==='executive'&&(!l.callCount||l.callCount===0)).length;
 
     // Location snapshot for dashboard
     const allStaff = [...USERS.manager,...USERS.executive].filter(u=>u.active);
@@ -1351,9 +1353,14 @@ function renderDashboard(){
       +'</div>';
 
     teamSection = locPanel
+      + (totalPending>0 ? '<div style="background:rgba(240,92,92,.08);border:1.5px solid rgba(240,92,92,.3);border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px">'
+        +'<div style="font-size:1.8rem;font-weight:800;font-family:Syne,sans-serif;color:var(--red);flex-shrink:0">'+totalPending+'</div>'
+        +'<div><div style="font-size:.85rem;font-weight:700;color:var(--red)">Total Calls Pending</div>'
+        +'<div style="font-size:.68rem;color:var(--muted2)">Numbers not yet called by any executive</div></div>'
+        +'</div>' : '')
       + '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between"><span>&#x1F4CB; Sales Managers</span><span style="font-size:.68rem;color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">'+USERS.manager.length+' members</span></div>'
       + mgrCards
-      + '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between"><span>&#x1F4DE; Sales Executives</span><span style="font-size:.68rem;color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">'+USERS.executive.length+' members</span></div>'
+      + '<div class="section-title" style="display:flex;align-items:center;justify-content:space-between"><span>&#x1F4DE; Sales Executives</span><span style="font-size:.68rem;color:var(--red);font-weight:700;text-transform:none;letter-spacing:0">'+totalPending+' pending</span></div>'
       + excCards;
   }
 
@@ -1379,7 +1386,7 @@ function renderDashboard(){
     const uncalled  = coldData.length - called;
     const generated = leads.filter(l=>l.generatedBy===currentUser&&l.assignedRole==='manager').length;
     execColdBanner = coldData.length > 0
-      ? '<div onclick="goPage(\'leads\',document.querySelector(\'.nav-btn[data-page=\\\"leads\\\"]\'))" style="background:linear-gradient(135deg,rgba(77,142,240,.12),rgba(34,201,138,.08));border:1.5px solid rgba(77,142,240,.3);border-radius:14px;padding:14px;margin-bottom:14px;cursor:pointer">'
+      ? '<div onclick="goPage(&quot;leads&quot;, document.querySelector(&#39;[data-page=leads]&#39;))" style="background:linear-gradient(135deg,rgba(77,142,240,.12),rgba(34,201,138,.08));border:1.5px solid rgba(77,142,240,.3);border-radius:14px;padding:14px;margin-bottom:14px;cursor:pointer">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
         +'<div style="font-size:.85rem;font-weight:700;font-family:Syne,sans-serif">❄️ My Cold Data</div>'
         +'<span style="font-size:.72rem;color:var(--blue);font-weight:600">Tap to call →</span>'
@@ -1417,7 +1424,8 @@ function renderDashboard(){
     +'<div class="stat-card" style="cursor:pointer" onclick="showLeadListModal(\'Hot\',\'🔥 Hot Leads\')"><div class="stat-label">&#x1F525; Hot Leads</div><div class="stat-value gold">'+hot+'</div><div class="stat-sub">Tap to view</div></div>'
     +'<div class="stat-card"><div class="stat-label">&#x1F4DE; Calls Today</div><div class="stat-value blue">'+todayCalls+'</div><div class="stat-sub">Logged</div></div>'
     +'<div class="stat-card" style="cursor:pointer" onclick="showLeadListModal(\'Closed\',\'✅ Closed Leads\')"><div class="stat-label">&#x2705; Closed</div><div class="stat-value green">'+closed+'</div><div class="stat-sub">Tap to view</div></div>'
-    +'<div class="stat-card" style="cursor:pointer" onclick="showLeadListModal(\'All\',\'📋 All My Leads\')"><div class="stat-label">&#x1F4CB; Total Leads</div><div class="stat-value">'+ml.length+'</div><div class="stat-sub">Tap to view</div></div>'
+    +(currentRole==='admin' ? '<div class="stat-card" style="cursor:pointer;border-color:rgba(240,92,92,.3);background:rgba(240,92,92,.04)" onclick="showPendingModal()"><div class="stat-label" style="color:var(--red)">&#x23F3; Pending Calls</div><div class="stat-value red">'+leads.filter(l=>l.assignedRole==='executive'&&(!l.callCount||l.callCount===0)).length+'</div><div class="stat-sub" style="color:var(--red)">Not called yet</div></div>'
+    : '<div class="stat-card" style="cursor:pointer" onclick="showLeadListModal(\'All\',\'📋 All My Leads\')"><div class="stat-label">&#x1F4CB; Total Leads</div><div class="stat-value">'+ml.length+'</div><div class="stat-sub">Tap to view</div></div>')
     +'</div>'
     + plotStats
     + (currentRole==='admin' ? adminLiveSection() : '')
@@ -1485,6 +1493,48 @@ function adminLiveSection(){
     +(interested.length===0
       ?'<div class="empty"><div class="empty-icon">📭</div>No interested leads yet</div>'
       :intRows+(interested.length>15?'<div style="text-align:center;font-size:.72rem;color:var(--muted2);padding:6px">...and '+(interested.length-15)+' more</div>':''));
+}
+
+function showPendingModal(){
+  const pending = leads.filter(l=>l.assignedRole==='executive'&&(!l.callCount||l.callCount===0));
+  // Group by executive
+  const byExec = {};
+  pending.forEach(l=>{
+    const name = l.assigned||'Unassigned';
+    if(!byExec[name]) byExec[name]=[];
+    byExec[name].push(l);
+  });
+  const execBlocks = Object.entries(byExec).map(([name, lList])=>{
+    const rows = lList.slice(0,20).map(l=>`
+      <div onclick="document.querySelector('[style*=fixed]').remove();openLead('${l.id}')"
+        style="display:flex;align-items:center;gap:10px;padding:9px;border-radius:10px;background:var(--surface);margin-bottom:5px;cursor:pointer;border:1px solid var(--border)">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(240,92,92,.1);color:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Syne,sans-serif;font-size:.8rem;flex-shrink:0">${l.name[0]}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.name}</div>
+          <div style="font-size:.65rem;color:var(--muted2)">📞 ${l.phone}${(l.interest&&l.interest!=='Not decided')?' · '+l.interest:''}</div>
+        </div>
+        <span style="font-size:.6rem;color:var(--red);font-weight:700;background:rgba(240,92,92,.1);border:1px solid rgba(240,92,92,.2);border-radius:8px;padding:2px 7px">Pending</span>
+      </div>`).join('');
+    return `<div style="margin-bottom:14px">
+      <div style="font-size:.7rem;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+        📞 ${name} <span style="background:rgba(240,92,92,.1);color:var(--red);border-radius:8px;padding:1px 7px;font-size:.62rem">${lList.length}</span>
+      </div>
+      ${rows}
+      ${lList.length>20?`<div style="font-size:.7rem;color:var(--muted2);text-align:center;padding:4px">...and ${lList.length-20} more</div>`:''}
+    </div>`;
+  }).join('');
+
+  const html = `<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-size:1rem;font-weight:700;font-family:Syne,sans-serif">⏳ Pending Calls (${pending.length})</div>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;color:var(--muted2);font-size:1.2rem;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted2);margin-bottom:14px">Numbers assigned to executives but not called yet</div>
+      ${pending.length===0?'<div style="text-align:center;color:var(--muted2);padding:20px">✅ All numbers have been called!</div>':execBlocks}
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 function showLeadListModal(statusFilter, title){
@@ -3588,7 +3638,7 @@ function deleteLead(id){
   save();
   // Delete from Supabase cloud too
   if(supabaseReady){
-    fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+    if(supabaseReady) db.from('leads').delete().eq('id',id);
   }
   closeModal('leadModal');
   renderLeads(); renderDashboard();
@@ -3870,7 +3920,7 @@ function deleteByExec(execName){
   leads = leads.filter(l=>!(l.assigned===execName&&l.assignedRole==='executive'));
   save();
   if(supabaseReady){
-    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
+    if(supabaseReady) Promise.all(toDelete.map(id => db.from('leads').delete().eq('id',id)));
   }
   showToast('🗑️ Deleted '+cnt+' records from '+execName.split(' ')[0]);
   switchAdminTab('upload');
@@ -3884,7 +3934,7 @@ function deleteByManager(mgrName){
   leads = leads.filter(l=>!((l.assignedManager===mgrName||l.transferredTo===mgrName)&&l.assignedRole==='manager'));
   save();
   if(supabaseReady){
-    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
+    if(supabaseReady) Promise.all(toDelete.map(id => db.from('leads').delete().eq('id',id)));
   }
   showToast('🗑️ Deleted '+cnt+' leads from '+mgrName.split(' ')[0]);
   switchAdminTab('upload');
@@ -3899,7 +3949,7 @@ function deleteAllColdData(){
   leads = leads.filter(l=>l.assignedRole!=='executive');
   save();
   if(supabaseReady){
-    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
+    if(supabaseReady) Promise.all(toDelete.map(id => db.from('leads').delete().eq('id',id)));
   }
   showToast('🗑️ All cold data deleted ('+cnt+' records)');
   switchAdminTab('upload');
@@ -3914,7 +3964,7 @@ function deleteAllLeads(){
   leads = leads.filter(l=>l.assignedRole!=='manager');
   save();
   if(supabaseReady){
-    toDelete.forEach(id => fetch(SUPA_URL+'/rest/v1/leads?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}}));
+    if(supabaseReady) Promise.all(toDelete.map(id => db.from('leads').delete().eq('id',id)));
   }
   showToast('🗑️ All leads deleted ('+cnt+' records)');
   switchAdminTab('upload');
@@ -4424,9 +4474,9 @@ async function factoryReset(){
   if(true){
     try{
       showToast('🔄 Clearing cloud data...');
-      await fetch(SUPA_URL+'/rest/v1/call_logs?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
-      await fetch(SUPA_URL+'/rest/v1/leads?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
-      await fetch(SUPA_URL+'/rest/v1/app_users?id=neq.__none__',{method:'DELETE',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+      await db.from('call_logs').delete().neq('id','__none__');
+      await db.from('leads').delete().neq('id','__none__');
+      await db.from('app_users').delete().neq('id','__none__');
       leads=[]; callLogs=[];
       USERS={admin:[{id:'u_admin',name:'SKD Admin',pass:'__CHANGE_ON_FIRST_LOGIN__',phone:'',email:'',active:true,createdAt:'2025-01-01'}],manager:[],executive:[]};
       await pushUsers();
