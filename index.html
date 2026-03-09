@@ -786,7 +786,7 @@ function startRealtimeSync(){
 }
 
 // Sync only plots from cloud and re-render if on plots page
-async function rebuildCallCounts(){
+function rebuildCallCounts(){
   leads.forEach(l=>{
     const actual = callLogs.filter(c=>c.leadId===l.id).length;
     if(actual !== (l.callCount||0)) l.callCount = actual;
@@ -1370,7 +1370,7 @@ function myLeads(){
 }
 
 function renderDashboard(){
-  if(currentRole==='executive'||currentRole==='manager') checkFollowupReminders();
+  try{ if(currentRole==='executive'||currentRole==='manager') setTimeout(()=>checkFollowupReminders(),800); }catch(e){}
   const ml = myLeads();
   const hot = ml.filter(l=>l.status==='Hot').length;
   const closed = ml.filter(l=>l.status==='Closed').length;
@@ -3885,7 +3885,9 @@ function openLead(id){
 
   document.getElementById('modal-body').innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
-    +'<div class="stat-card"><div class="stat-label">Status</div><div style="margin-top:4px"><span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span></div></div>'
+    +(currentRole==='executive' && l.assignedRole==='executive'
+      ? '<div class="stat-card"><div class="stat-label">Last Outcome</div><div style="margin-top:6px"><span style="font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:12px;background:'+(l.lastOutcome?outcomeDisplay(l.lastOutcome).color+'22':'rgba(150,150,150,.1)')+';color:'+(l.lastOutcome?outcomeDisplay(l.lastOutcome).color:'var(--muted2)')+'">'+(l.lastOutcome?outcomeDisplay(l.lastOutcome).label:'🟢 Fresh')+' </span></div></div>'
+      : '<div class="stat-card"><div class="stat-label">Status</div><div style="margin-top:4px"><span class="badge '+l.status.toLowerCase()+'">'+l.status+'</span></div></div>')
     +'<div class="stat-card"><div class="stat-label">Calls Logged</div><div class="stat-value blue">'+logs.length+'</div></div>'
     +'</div>'
     // Contact info
@@ -3902,11 +3904,11 @@ function openLead(id){
     + assignedByLine
     +(l.followup?'<div style="font-size:.8rem;color:var(--muted2);margin-top:2px">📅 Follow-up: '+l.followup+'</div>':'')
     +'</div>'
-    // Follow-up stages
-    +'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
+    // Follow-up stages — only show for manager leads, not executive cold data
+    +(l.assignedRole!=='executive'||currentRole!=='executive'?'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
     +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:8px;font-weight:600">Customer Follow-up Stage</div>'
     +'<div>'+stageChips+'</div>'
-    +'</div>'
+    +'</div>':'')
     // Notes & history
     +'<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">'
     +'<div style="font-size:.72rem;color:var(--muted2);margin-bottom:8px;font-weight:600">Notes</div>'
@@ -4160,6 +4162,9 @@ function saveCall(){
   callLogs.push(log);
   rebuildCallCounts();
   save(activeLeadId);
+  // Force re-render so status updates are visible immediately
+  if(document.getElementById('page-dashboard')&&document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
+  if(document.getElementById('leads-list')) renderLeadsList();
   saveCallToCloud(log);
   closeModal('callModal');
   if(!log.autoTransferredTo){
