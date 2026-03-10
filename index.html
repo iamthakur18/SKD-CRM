@@ -2841,22 +2841,24 @@ function adminTeamHTML(){
       +'</div>';
   }).join('');
 
-  const leadsTable = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
-    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">📋 All Leads</div>'
-    +'<div style="display:flex;align-items:center;gap:6px">'
-    +'<div style="font-size:.7rem;color:var(--muted2)">'+leads.length+' total</div>'
-    +(leads.length>0?'<button onclick="if(confirm(\'Delete ALL '+leads.length+' leads? This cannot be undone!\')){if(confirm(\'FINAL WARNING: This deletes all leads from cloud too. Are you sure?\')){leads=[];save();fetch(SUPA_URL+\'/rest/v1/leads?id=neq.__none__\',{method:\'DELETE\',headers:{\'apikey\':SUPA_KEY,\'Authorization\':\'Bearer \'+SUPA_KEY}});renderAdminPanel();renderDashboard();showToast(\'All leads deleted\');}}" style="background:none;border:1px solid rgba(240,92,92,.3);border-radius:6px;color:var(--red);cursor:pointer;font-size:.68rem;padding:3px 8px">🗑️ Clear All</button>':'')
-    +'</div>'
-    +'</div>'
-    +'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
-    +tabs.map(t=>'<div onclick="window._adminLeadFilter=\''+t+'\';switchAdminTab(\'team\')" style="cursor:pointer;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:600;border:1.5px solid '+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--border)')+';background:'+(activeFilter===t?(t==='executive'?'rgba(150,150,150,.1)':'rgba(232,160,32,.1)'):'var(--surface)')+';color:'+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--muted2)')+'">'+( t==='All'?'All ('+leads.length+')':t==='manager'?'🔥 Hot Leads ('+leads.filter(l=>l.assignedRole==='manager').length+')':'❄️ Cold Data ('+leads.filter(l=>l.assignedRole==='executive').length+')')+'</div>').join('')
-    +'</div>'
-    +'<div style="grid-template-columns:1fr 1fr auto auto;gap:6px;padding:6px 0;border-bottom:2px solid var(--border2);margin-bottom:4px;display:grid">'
-    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Customer</div>'
-    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+(activeFilter==='executive'?'Executive':'Manager')+'</div>'
-    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Status</div>'
-    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Del</div>'
+  // Bulk delete setup
+  const coldLeads = leads.filter(l=>l.assignedRole==='executive');
+  const pendingLeads = coldLeads.filter(l=>!l.callCount||l.callCount===0);
+  const notIntLeads = coldLeads.filter(l=>l.lastOutcome==='not_interested');
+  const switchedLeads = coldLeads.filter(l=>l.lastOutcome==='switched_off');
+  const notPickedLeads = coldLeads.filter(l=>l.lastOutcome==='not_picked');
+  window._bulkIds = {
+    pending: pendingLeads.map(l=>l.id),
+    not_interested: notIntLeads.map(l=>l.id),
+    not_picked: notPickedLeads.map(l=>l.id),
+    switched_off: switchedLeads.map(l=>l.id),
+    all_cold: coldLeads.map(l=>l.id),
+    all: leads.map(l=>l.id)
+  };
+  const mkBulkBtn = (label, key, cnt) => cnt===0 ? '' :
+    '<button data-bkey="'+key+'" onclick="bulkDeleteLeads(this.dataset.bkey,\''+label+'\')" style="background:rgba(240,92,92,.08);border:1px solid rgba(240,92,92,.35);border-radius:8px;color:var(--red);cursor:pointer;font-size:.68rem;padding:6px 10px;font-weight:600">🗑️ '+label+' ('+cnt+')</button>';
+
+  const leadsTable = '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px">'    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'    +'<div style="font-size:.88rem;font-weight:700;font-family:Syne,sans-serif">📋 All Leads</div>'    +'<div style="font-size:.7rem;color:var(--muted2)">'+leads.length+' total</div>'    +'</div>'    +'<div style="background:rgba(240,92,92,.05);border:1.5px solid rgba(240,92,92,.2);border-radius:12px;padding:12px;margin-bottom:12px">'    +'<div style="font-size:.75rem;font-weight:700;color:var(--red);margin-bottom:10px;font-family:Syne,sans-serif">🗑️ Bulk Delete (also removes from Supabase)</div>'    +'<div style="display:flex;flex-wrap:wrap;gap:8px">'    +mkBulkBtn('Pending / Uncalled', 'pending', pendingLeads.length)    +mkBulkBtn('Not Interested', 'not_interested', notIntLeads.length)    +mkBulkBtn('Not Picked', 'not_picked', notPickedLeads.length)    +mkBulkBtn('Switched Off', 'switched_off', switchedLeads.length)    +mkBulkBtn('All Cold Data', 'all_cold', coldLeads.length)    +(leads.length>0?'<button onclick="bulkDeleteLeads(\'all\',\'ALL Leads\')" style="background:rgba(240,92,92,.18);border:1.5px solid rgba(240,92,92,.6);border-radius:8px;color:var(--red);cursor:pointer;font-size:.68rem;padding:6px 10px;font-weight:800">☠️ Delete Everything</button>':'')    +'</div>'    +'</div>'    +'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'    +tabs.map(t=>'<div onclick="window._adminLeadFilter=\''+t+'\';switchAdminTab(\'team\')" style="cursor:pointer;padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:600;border:1.5px solid '+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--border)')+';background:'+(activeFilter===t?(t==='executive'?'rgba(150,150,150,.1)':'rgba(232,160,32,.1)'):'var(--surface)')+';color:'+(activeFilter===t?(t==='executive'?'var(--muted2)':'var(--gold)'):'var(--muted2)')+'">'+( t==='All'?'All ('+leads.length+')':t==='manager'?'🔥 Hot Leads ('+leads.filter(l=>l.assignedRole==='manager').length+')':'❄️ Cold Data ('+leads.filter(l=>l.assignedRole==='executive').length+')')+'</div>').join('')    +'</div>'    +'<div style="grid-template-columns:1fr 1fr auto auto;gap:6px;padding:6px 0;border-bottom:2px solid var(--border2);margin-bottom:4px;display:grid">'    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Customer</div>'    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+(activeFilter==='executive'?'Executive':'Manager')+'</div>'    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Status</div>'    +'<div style="font-size:.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Del</div>'
     +'</div>'
     +(filteredLeads.length===0
       ?'<div style="text-align:center;color:var(--muted);padding:20px 0;font-size:.82rem">'+(activeFilter==='executive'?'No cold data uploaded yet':'No hot leads yet')+'</div>'
@@ -2999,6 +3001,7 @@ function buildAdminTeamPerfHTML(){
     + allU.map(u=>{
       const uLeads  = leads.filter(l=>u.role==='manager'?(l.assignedManager===u.name||l.assigned===u.name):l.generatedBy===u.name).length;
       const uCalls  = callLogs.filter(c=>(c.agent||'').trim().toLowerCase()===(u.name||'').trim().toLowerCase()).length;
+      const uPending = u.role==='executive' ? leads.filter(l=>l.assigned===u.name&&(!l.callCount||l.callCount===0)).length : 0;
       const uClosed = leads.filter(l=>l.assigned===u.name&&l.status==='Closed').length;
       const pct = Math.round((uLeads/maxL)*100);
       return '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:8px">'
@@ -3014,6 +3017,12 @@ function buildAdminTeamPerfHTML(){
         +'<div style="text-align:center;background:var(--surface);border-radius:8px;padding:5px"><div style="font-size:.9rem;font-weight:700;color:var(--green)">'+uClosed+'</div><div style="font-size:.58rem;color:var(--muted)">Closed</div></div>'
         +'</div>'
         +'<div style="width:100%;height:3px;background:var(--border);border-radius:2px"><div style="width:'+pct+'%;height:100%;border-radius:2px;background:'+u.color+'"></div></div>'
+        +(u.role==='executive'&&uPending>0
+          ?'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(240,92,92,.06);border:1px solid rgba(240,92,92,.2);border-radius:8px;padding:7px 10px;margin-top:6px">'
+           +'<div style="font-size:.7rem;color:var(--red);font-weight:600">⏳ '+uPending+' uncalled pending</div>'
+           +'<button data-uname="'+u.name+'" onclick="deleteUserPending(this.dataset.uname)" style="background:var(--red);color:#fff;border:none;border-radius:6px;font-size:.65rem;font-weight:700;padding:4px 10px;cursor:pointer">🗑️ Delete Pending</button>'
+           +'</div>'
+          :'')
         +'</div>';
     }).join('');
 }
@@ -4012,6 +4021,61 @@ function updateStatus(id,status){
   if(!status)return;
   const l=leads.find(x=>x.id===id);
   if(l){l.status=status;save();renderLeads&&renderLeads();renderDashboard();showToast('Status updated!');}
+}
+
+function deleteUserPending(userName){
+  const pendingIds = leads.filter(l=>l.assigned===userName&&(!l.callCount||l.callCount===0)).map(l=>l.id);
+  if(!pendingIds.length){ showToast('No pending leads for '+userName,'error'); return; }
+  if(!confirm('Delete '+pendingIds.length+' uncalled/pending leads assigned to '+userName+'?\nThis will also remove them from Supabase.')) return;
+
+  // Remove locally
+  leads = leads.filter(l=>!pendingIds.includes(l.id));
+  save();
+
+  // Delete from Supabase in batches of 50
+  const batches=[];
+  for(let i=0;i<pendingIds.length;i+=50) batches.push(pendingIds.slice(i,i+50));
+  Promise.all(batches.map(batch=>{
+    const filter=batch.map(id=>'id.eq.'+encodeURIComponent(id)).join(',');
+    return fetch(SUPA_URL+'/rest/v1/leads?or=('+filter+')',{
+      method:'DELETE',
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=minimal'}
+    });
+  })).then(()=>{
+    showToast('🗑️ Deleted '+pendingIds.length+' pending leads of '+userName+' from cloud');
+  }).catch(e=>console.warn('Delete error:',e));
+
+  renderAdminPanel();
+  renderDashboard();
+}
+
+function bulkDeleteLeads(key, label){
+  const ids = (key==='__all__'||key==='all') ? leads.map(l=>l.id) : (window._bulkIds||{})[key]||[];
+  if(!ids.length){ showToast('Nothing to delete','error'); return; }
+  if(!confirm('Delete '+ids.length+' leads ('+label+')? This removes from cloud too.')) return;
+
+  // Remove from local
+  leads = leads.filter(l=>!ids.includes(l.id));
+  save();
+
+  // Delete from Supabase in batches of 50
+  const batchSize = 50;
+  const batches = [];
+  for(let i=0;i<ids.length;i+=batchSize) batches.push(ids.slice(i,i+batchSize));
+
+  Promise.all(batches.map(batch=>{
+    const filter = batch.map(id=>'id.eq.'+encodeURIComponent(id)).join(',');
+    return fetch(SUPA_URL+'/rest/v1/leads?or=('+filter+')',{
+      method:'DELETE',
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=minimal'}
+    });
+  })).then(()=>{
+    showToast('🗑️ Deleted '+ids.length+' leads from cloud');
+  }).catch(e=>console.warn('Bulk delete error:',e));
+
+  renderAdminPanel();
+  renderDashboard();
+  showToast('🗑️ Deleting '+ids.length+' leads...');
 }
 
 function deleteLead(id){
